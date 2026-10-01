@@ -50,17 +50,34 @@ final class AudioCache {
         return url
     }
 
-    func storeDownloadedFile(at temporaryURL: URL, key: String, mimeType: String, protectedKey: String?) throws -> URL {
+    func storeDownloadedFile(
+        at temporaryURL: URL,
+        key: String,
+        mimeType: String,
+        expectedByteCount: Int64? = nil,
+        protectedKey: String?
+    ) throws -> URL {
         let resource = try temporaryURL.resourceValues(forKeys: [.fileSizeKey])
         let size = Int64(resource.fileSize ?? 0)
         guard size > 1_024 else { throw URLError(.cannotDecodeContentData) }
+        if let expectedByteCount, expectedByteCount > 0, size != expectedByteCount {
+            throw URLError(.cannotDecodeContentData)
+        }
 
         let fileName = safeFileName(for: key) + "." + fileExtension(for: mimeType)
         let destination = directory.appendingPathComponent(fileName)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+        let staging = directory.appendingPathComponent(".download-\(UUID().uuidString)")
+        try FileManager.default.moveItem(at: temporaryURL, to: staging)
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: staging)
+            } else {
+                try FileManager.default.moveItem(at: staging, to: destination)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            throw error
         }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
 
         let context = container.mainContext
         var descriptor = FetchDescriptor<AudioCacheEntry>(predicate: #Predicate { $0.key == key })
@@ -76,9 +93,19 @@ final class AudioCache {
         } else {
             context.insert(AudioCacheEntry(key: key, relativePath: fileName, byteCount: size, mimeType: mimeType))
         }
-        try? context.save()
+        try context.save()
         evictIfNeeded(protectedKey: protectedKey)
         return destination
+    }
+
+    func remove(for key: String) {
+        let context = container.mainContext
+        var descriptor = FetchDescriptor<AudioCacheEntry>(predicate: #Predicate { $0.key == key })
+        descriptor.fetchLimit = 1
+        guard let entry = try? context.fetch(descriptor).first else { return }
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath))
+        context.delete(entry)
+        try? context.save()
     }
 
     func usedBytes() -> Int64 {

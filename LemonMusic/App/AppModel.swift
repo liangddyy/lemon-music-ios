@@ -261,7 +261,10 @@ final class AppModel {
     }
 
     func clearArtworkCache() { artworkStore.clear() }
-    func clearAudioCache() { audioCache.clear() }
+    func clearAudioCache() {
+        playback.cancelAutomaticCaching()
+        audioCache.clear()
+    }
 
     private func recordRecentPlay(_ track: MusicTrack) {
         userData.recentPlays.removeAll { $0.id == track.id }
@@ -325,6 +328,7 @@ final class AppModel {
     }
 
     private func clearAllCachedData() {
+        playback.cancelAutomaticCaching()
         tracks = []
         albums = []
         artists = []

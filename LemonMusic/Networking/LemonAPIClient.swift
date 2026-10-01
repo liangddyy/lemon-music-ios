@@ -132,7 +132,9 @@ actor LemonAPIClient {
     func sources() async throws -> [MusicSource] {
         let root = try await request("/search/sources")
         guard let object = root["sources"]?.object ?? root["data"]?["sources"]?.object else { return [] }
-        return object.map { MusicSource(id: $0.key, name: $0.value.string ?? $0.key) }.sorted { $0.name < $1.name }
+        return object.map {
+            MusicSource(id: $0.key, name: $0.value.string ?? $0.value["name"]?.string ?? $0.key)
+        }.sorted { $0.name < $1.name }
     }
 
     func searchTracks(keyword: String, source: String, page: Int = 1) async throws -> [MusicTrack] {

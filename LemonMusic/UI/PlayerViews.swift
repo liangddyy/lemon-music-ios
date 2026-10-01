@@ -87,11 +87,12 @@ struct FullPlayerView: View {
     @State private var showingQueue = false
     @State private var lyricDocument = LyricDocument.empty
     @State private var lyricsLoading = false
+    @State private var dismissOffset: CGFloat = 0
 
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                let artworkSize = min(proxy.size.width - 44, max(180, proxy.size.height * 0.43), 420)
+                let artworkSize = min(proxy.size.width - 44, max(168, proxy.size.height * 0.39), 400)
                 if let track = model.playback.currentTrack {
                     VStack(spacing: 0) {
                         Group {
@@ -135,6 +136,7 @@ struct FullPlayerView: View {
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
+                            playbackStatus(track)
                         }
 
                         Spacer(minLength: 10)
@@ -163,6 +165,8 @@ struct FullPlayerView: View {
                 await loadLyrics(for: model.playback.currentTrack)
             }
         }
+        .offset(x: dismissOffset)
+        .simultaneousGesture(edgeDismissGesture)
     }
 
     private var progress: some View {
@@ -223,6 +227,37 @@ struct FullPlayerView: View {
         .foregroundStyle(.primary)
     }
 
+    private func playbackStatus(_ track: MusicTrack) -> some View {
+        HStack(spacing: 7) {
+            PlaybackStatusBadge(
+                title: sourceTitle(for: track),
+                icon: track.locator.kind == .local ? "externaldrive.fill" : "globe",
+                color: .secondary
+            )
+
+            switch model.playback.audioCacheState(for: track) {
+            case .notCached:
+                PlaybackStatusBadge(title: "未缓存", icon: "icloud.and.arrow.down", color: .secondary)
+            case .waiting:
+                PlaybackStatusBadge(title: "待缓存", icon: "clock", color: .orange)
+            case .caching:
+                PlaybackStatusBadge(title: "缓存中", icon: "arrow.down.circle", color: .orange)
+            case .cached:
+                PlaybackStatusBadge(title: "已缓存", icon: "checkmark.circle.fill", color: .green)
+            case .failed:
+                PlaybackStatusBadge(title: "缓存失败", icon: "exclamationmark.triangle.fill", color: .red)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func sourceTitle(for track: MusicTrack) -> String {
+        guard track.locator.kind == .online else { return "服务器本地歌曲" }
+        guard let sourceID = track.locator.source,
+              let sourceName = model.sources.first(where: { $0.id == sourceID })?.name else { return "在线歌曲" }
+        return "在线歌曲 · \(sourceName)"
+    }
+
     private var playerBackground: some View {
         LinearGradient(
             colors: [Color.orange.opacity(0.18), Color(.systemBackground), Color(.systemBackground)],
@@ -249,6 +284,30 @@ struct FullPlayerView: View {
         lyricDocument = LyricDocument(rawValue: value)
         lyricsLoading = false
     }
+
+    private var edgeDismissGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard value.startLocation.x <= 22,
+                      value.translation.width > 0,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                dismissOffset = min(value.translation.width, 180)
+            }
+            .onEnded { value in
+                let isEdgeSwipe = value.startLocation.x <= 22
+                    && value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height)
+                let shouldDismiss = isEdgeSwipe
+                    && max(value.translation.width, value.predictedEndTranslation.width) > 120
+                if shouldDismiss {
+                    dismiss()
+                } else {
+                    withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.86)) {
+                        dismissOffset = 0
+                    }
+                }
+            }
+    }
 }
 
 private struct PlayerIconButton: View {
@@ -265,6 +324,22 @@ private struct PlayerIconButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+private struct PlaybackStatusBadge: View {
+    let title: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        Label(title, systemImage: icon)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.thinMaterial, in: Capsule())
     }
 }
 
