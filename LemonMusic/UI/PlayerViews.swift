@@ -238,10 +238,9 @@ struct FullPlayerView: View {
             switch model.playback.audioCacheState(for: track) {
             case .notCached:
                 PlaybackStatusBadge(title: "未缓存", icon: "icloud.and.arrow.down", color: .secondary)
-            case .waiting:
-                PlaybackStatusBadge(title: "待缓存", icon: "clock", color: .orange)
-            case .caching:
-                PlaybackStatusBadge(title: "缓存中", icon: "arrow.down.circle", color: .orange)
+            case .caching(let progress):
+                let title = progress.map { "已缓存 \(Int($0 * 100))%" } ?? "边播边缓存"
+                PlaybackStatusBadge(title: title, icon: "arrow.down.circle", color: .orange)
             case .cached:
                 PlaybackStatusBadge(title: "已缓存", icon: "checkmark.circle.fill", color: .green)
             case .failed:

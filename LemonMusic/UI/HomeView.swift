@@ -5,6 +5,8 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var showingSettings = false
+    @State private var showingCreatePlaylist = false
+    @State private var playlistName = ""
 
     var body: some View {
         ScrollView {
@@ -20,9 +22,7 @@ struct HomeView: View {
                 if !model.userData.favorites.isEmpty {
                     trackSection(title: "我的收藏", tracks: Array(model.userData.favorites.prefix(8)))
                 }
-                if !model.userData.playlists.isEmpty {
-                    playlistSection
-                }
+                playlistSection
                 if model.tracks.isEmpty {
                     EmptyContentView(title: "音乐库还是空的", systemImage: "music.note.house", message: "请先在 Lemon Music 服务端扫描音乐库")
                         .frame(minHeight: 300)
@@ -39,6 +39,15 @@ struct HomeView: View {
         }
         .refreshable { await model.refreshAll(force: true) }
         .sheet(isPresented: $showingSettings) { NavigationStack { SettingsView() } }
+        .alert("新建歌单", isPresented: $showingCreatePlaylist) {
+            TextField("歌单名称", text: $playlistName)
+            Button("取消", role: .cancel) { playlistName = "" }
+            Button("创建") {
+                let name = playlistName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { model.createPlaylist(name: name) }
+                playlistName = ""
+            }
+        }
     }
 
     private var welcomeHeader: some View {
@@ -104,25 +113,46 @@ struct HomeView: View {
 
     private var playlistSection: some View {
         VStack(spacing: 12) {
-            SectionTitle(title: "我的歌单")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(model.userData.playlists) { playlist in
-                        NavigationLink {
-                            PlaylistDetailView(playlist: playlist)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.14))
-                                    Image(systemName: "music.note.list").font(.largeTitle).foregroundStyle(.orange)
+            HStack {
+                Text("我的歌单")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Button { showingCreatePlaylist = true } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("新建歌单")
+            }
+
+            if model.userData.playlists.isEmpty {
+                Text("还没有歌单")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(model.userData.playlists) { playlist in
+                            NavigationLink {
+                                PlaylistDetailView(playlist: playlist)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.14))
+                                        Image(systemName: "music.note.list").font(.largeTitle).foregroundStyle(.orange)
+                                    }
+                                    .frame(width: 140, height: 140)
+                                    Text(playlist.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Text("\(playlist.tracks.count) 首").font(.caption).foregroundStyle(.secondary)
                                 }
-                                .frame(width: 140, height: 140)
-                                Text(playlist.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Text("\(playlist.tracks.count) 首").font(.caption).foregroundStyle(.secondary)
+                                .frame(width: 140, alignment: .leading)
                             }
-                            .frame(width: 140, alignment: .leading)
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -151,4 +181,3 @@ struct PlaylistDetailView: View {
         }
     }
 }
-

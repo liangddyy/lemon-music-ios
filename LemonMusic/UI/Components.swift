@@ -79,21 +79,26 @@ struct TrackArtwork: View {
 }
 
 struct AlbumArtwork: View {
+    @Environment(AppModel.self) private var model
     let album: MusicAlbum
     let size: CGFloat
+    @State private var image: UIImage?
 
     var body: some View {
-        AsyncImage(url: album.artworkURL.flatMap(URL.init(string:))) { phase in
-            if let image = phase.image { image.resizable().scaledToFill() }
-            else {
-                ZStack {
-                    Color(.tertiarySystemFill)
-                    Image(systemName: "square.stack.fill").foregroundStyle(.secondary)
-                }
+        ZStack {
+            Color(.tertiarySystemFill)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "square.stack.fill")
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: album.id) { image = await model.artworkStore.image(for: album) }
     }
 }
 
@@ -116,4 +121,3 @@ struct SectionTitle: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-

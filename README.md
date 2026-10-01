@@ -8,7 +8,7 @@
 - 在线音源：搜索、新歌、新碟和排行榜
 - 后台播放、锁屏控制、AirPlay、播放队列和歌词
 - SwiftData 元数据缓存与 stale-while-revalidate
-- 自动音频 LRU 缓存，默认 2 GB，可限制蜂窝网络
+- 边播放边写入的断点续传音频缓存，默认 2 GB 空间 LRU
 - 单服务器、单账号，Token 仅存储在 Keychain
 
 ## 要求
@@ -28,4 +28,4 @@ CarPlay 尚未包含在一期版本中，也不声明 CarPlay entitlement。
 
 ## 许可证
 
-本项目基于 Cassette 二次开发，派生文件继续遵循 MPL-2.0。原始版权及许可信息见 `LICENSE`、`NOTICE` 和 `COPYRIGHT`。
+本项目基于 Cassette 二次开发，派生文件继续遵循 MPL-2.0。播放器使用本地固定并扩展的 AudioStreaming 1.4.4，其 MIT 许可保留在 `Vendor/AudioStreaming/LICENSE`。其他原始版权及许可信息见 `LICENSE`、`NOTICE` 和 `COPYRIGHT`。

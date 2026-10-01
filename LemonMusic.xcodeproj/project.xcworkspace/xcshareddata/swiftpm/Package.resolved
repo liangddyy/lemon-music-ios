@@ -1,15 +1,6 @@
 {
-  "originHash" : "e513b9891146e54b68921120d0f3830214c435004e3ae49852c3f548c268980b",
+  "originHash" : "e6d7fb9de6bb06f185748193efeff4119465794be739cab2058b450c6d445b3b",
   "pins" : [
-    {
-      "identity" : "audiostreaming",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/dimitris-c/AudioStreaming",
-      "state" : {
-        "revision" : "a729ee28fece29d80a749419d96df0693200f124",
-        "version" : "1.4.4"
-      }
-    },
     {
       "identity" : "ogg-binary-xcframework",
       "kind" : "remoteSourceControl",

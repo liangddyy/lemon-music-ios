@@ -5,8 +5,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var showingCreatePlaylist = false
-    @State private var playlistName = ""
 
     var body: some View {
         Form {
@@ -23,10 +21,6 @@ struct SettingsView: View {
                 )) {
                     ForEach(AudioCache.sizeOptions, id: \.self) { Text(formatBytes($0)).tag($0) }
                 }
-                Toggle("允许使用蜂窝网络缓存", isOn: Binding(
-                    get: { model.audioCache.cacheOverCellular },
-                    set: { model.audioCache.cacheOverCellular = $0 }
-                ))
                 LabeledContent("已使用", value: formatBytes(model.audioCache.usedBytes()))
                 Button("清空音频缓存", role: .destructive) { model.clearAudioCache() }
             }
@@ -34,10 +28,6 @@ struct SettingsView: View {
             Section("资料与封面") {
                 Button("刷新音乐库") { Task { await model.refreshAll(force: true) } }
                 Button("清空封面缓存", role: .destructive) { model.clearArtworkCache() }
-            }
-
-            Section("歌单") {
-                Button("新建歌单", systemImage: "plus") { showingCreatePlaylist = true }
             }
 
             Section("关于") {
@@ -55,15 +45,6 @@ struct SettingsView: View {
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("完成") { dismiss() } }
-        .alert("新建歌单", isPresented: $showingCreatePlaylist) {
-            TextField("歌单名称", text: $playlistName)
-            Button("取消", role: .cancel) { playlistName = "" }
-            Button("创建") {
-                let name = playlistName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !name.isEmpty { model.createPlaylist(name: name) }
-                playlistName = ""
-            }
-        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

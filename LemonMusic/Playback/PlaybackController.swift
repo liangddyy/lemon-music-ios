@@ -13,8 +13,7 @@ import UIKit
 final class PlaybackController {
     enum AudioCacheState: Equatable {
         case notCached
-        case waiting
-        case caching
+        case caching(Double?)
         case cached
         case failed
     }
@@ -37,10 +36,9 @@ final class PlaybackController {
     private let audioCache: AudioCache
     private let artworkStore: ArtworkStore
     private var progressTask: Task<Void, Never>?
-    private var cacheTasks: [String: Task<Void, Never>] = [:]
-    private var cacheTaskIDs: [String: UUID] = [:]
     private var retryingCurrentItem = false
     private var currentPlaybackUsesCache = false
+    private var currentPlaybackUsesPartialCache = false
     private var originalQueue: [MusicTrack]?
 
     init(api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore) {
@@ -56,12 +54,19 @@ final class PlaybackController {
             secondsRequiredToStartPlayingAfterBufferUnderrun: 1,
             enableLogs: false
         )
-        let player = AudioPlayer(configuration: configuration)
+        let player = AudioPlayer(configuration: configuration, streamCache: audioCache.streamCache)
         let delegate = LemonAudioPlayerDelegate()
         self.player = player
         self.playerDelegate = delegate
         delegate.controller = self
         player.delegate = delegate
+        audioCache.onStreamingProgress = { [weak self] key, downloaded, total in
+            guard total > 0 else { return }
+            self?.audioCacheStates[key] = .caching(min(1, Double(downloaded) / Double(total)))
+        }
+        audioCache.onStreamingCompleted = { [weak self] key in
+            self?.audioCacheStates[key] = .cached
+        }
 
         configureAudioSession()
         configureRemoteCommands()
@@ -170,9 +175,6 @@ final class PlaybackController {
     }
 
     func cancelAutomaticCaching() {
-        cacheTasks.values.forEach { $0.cancel() }
-        cacheTasks.removeAll()
-        cacheTaskIDs.removeAll()
         audioCacheStates.removeAll()
     }
 
@@ -186,10 +188,11 @@ final class PlaybackController {
     }
 
     func handlePlaybackError() async {
-        if currentPlaybackUsesCache, let track = currentTrack {
+        if (currentPlaybackUsesCache || currentPlaybackUsesPartialCache), let track = currentTrack {
             audioCache.remove(for: track.id)
             audioCacheStates[track.id] = .notCached
             currentPlaybackUsesCache = false
+            currentPlaybackUsesPartialCache = false
         }
         guard !retryingCurrentItem else {
             isPlaying = false
@@ -202,23 +205,28 @@ final class PlaybackController {
         guard queue.indices.contains(currentIndex) else { return }
         let track = queue[currentIndex]
         currentTrack = track
-        cancelPendingCacheTasks()
         retryingCurrentItem = forceRefresh
         currentPlaybackUsesCache = false
+        currentPlaybackUsesPartialCache = false
 
         do {
-            let url: URL
             if let cachedURL = audioCache.cachedURL(for: track.id) {
-                url = cachedURL
                 currentPlaybackUsesCache = true
                 audioCacheStates[track.id] = .cached
+                player.stop()
+                player.play(url: cachedURL)
             } else {
-                if cacheTasks[track.id] == nil { audioCacheStates[track.id] = .notCached }
-                url = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
+                if let partial = audioCache.partialProgress(for: track.id), partial.total > 0 {
+                    audioCacheStates[track.id] = .caching(min(1, Double(partial.downloaded) / Double(partial.total)))
+                    currentPlaybackUsesPartialCache = partial.downloaded > 0
+                } else {
+                    audioCacheStates[track.id] = .caching(0)
+                }
+                let streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
+                player.stop()
+                player.play(url: streamURL, cacheKey: track.id)
             }
 
-            player.stop()
-            player.play(url: url)
             lastError = nil
             duration = track.duration
             position = 0
@@ -226,159 +234,11 @@ final class PlaybackController {
             if !autoplay { player.pause() }
             updateNowPlaying()
             persistQueue()
-            if !url.isFileURL { scheduleAutomaticCache(track: track) }
         } catch {
             isPlaying = false
+            audioCacheStates[track.id] = .failed
             lastError = error.localizedDescription
         }
-    }
-
-    private func scheduleAutomaticCache(track: MusicTrack) {
-        guard cacheTasks[track.id] == nil else { return }
-        if audioCache.cachedURL(for: track.id) != nil {
-            audioCacheStates[track.id] = .cached
-            return
-        }
-
-        let taskID = UUID()
-        cacheTaskIDs[track.id] = taskID
-        audioCacheStates[track.id] = .waiting
-        cacheTasks[track.id] = Task { [weak self] in
-            defer { self?.finishCacheTask(for: track.id, taskID: taskID) }
-            do {
-                try await Task.sleep(for: .seconds(30))
-                guard !Task.isCancelled, let self else { return }
-                guard self.currentTrack?.id == track.id else {
-                    self.audioCacheStates[track.id] = .notCached
-                    return
-                }
-
-                self.audioCacheStates[track.id] = .caching
-                let download = try await self.downloadForCache(track)
-                defer { try? FileManager.default.removeItem(at: download.url) }
-                guard !Task.isCancelled, self.cacheTaskIDs[track.id] == taskID else {
-                    throw CancellationError()
-                }
-                _ = try self.audioCache.storeDownloadedFile(
-                    at: download.url,
-                    key: track.id,
-                    mimeType: download.mimeType,
-                    expectedByteCount: download.expectedByteCount,
-                    protectedKey: self.currentTrack?.id
-                )
-                self.audioCacheStates[track.id] = self.audioCache.cachedURL(for: track.id) == nil ? .failed : .cached
-            } catch is CancellationError {
-                if self?.cacheTaskIDs[track.id] == taskID {
-                    self?.audioCacheStates[track.id] = .notCached
-                }
-            } catch {
-                if self?.cacheTaskIDs[track.id] == taskID {
-                    self?.audioCacheStates[track.id] = .failed
-                }
-            }
-        }
-    }
-
-    private struct DownloadedAudio {
-        let url: URL
-        let mimeType: String
-        let expectedByteCount: Int64?
-    }
-
-    private enum CacheDownloadError: Error {
-        case invalidResponse
-    }
-
-    private func downloadForCache(_ track: MusicTrack) async throws -> DownloadedAudio {
-        var lastError: Error = CacheDownloadError.invalidResponse
-
-        for refresh in [false, true] {
-            do {
-                try Task.checkCancellation()
-                let streamURL = try await api.resolvePlayURL(for: track, refresh: refresh)
-                let configuration = URLSessionConfiguration.default
-                configuration.allowsExpensiveNetworkAccess = audioCache.cacheOverCellular
-                configuration.timeoutIntervalForResource = 15 * 60
-                let session = URLSession(configuration: configuration)
-                let (temporaryURL, response) = try await session.download(from: streamURL)
-                do {
-                    return try validatedDownload(at: temporaryURL, response: response)
-                } catch {
-                    try? FileManager.default.removeItem(at: temporaryURL)
-                    throw error
-                }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                lastError = error
-            }
-        }
-
-        throw lastError
-    }
-
-    private func validatedDownload(at url: URL, response: URLResponse) throws -> DownloadedAudio {
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw CacheDownloadError.invalidResponse
-        }
-
-        let mimeType = (response.mimeType ?? "application/octet-stream").lowercased()
-        let supportedType = mimeType.hasPrefix("audio/")
-            || mimeType == "application/octet-stream"
-            || mimeType == "binary/octet-stream"
-            || mimeType.contains("flac")
-            || mimeType.contains("ogg")
-            || mimeType.contains("mpeg")
-            || mimeType.contains("mp4")
-            || mimeType.contains("aac")
-            || mimeType.contains("opus")
-        guard supportedType else { throw CacheDownloadError.invalidResponse }
-
-        let fileSize = Int64((try url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-        guard fileSize > 1_024 else { throw CacheDownloadError.invalidResponse }
-
-        let expectedByteCount: Int64?
-        if http.statusCode == 206 {
-            guard let value = http.value(forHTTPHeaderField: "Content-Range"),
-                  let completeLength = completeRangeLength(value),
-                  completeLength == fileSize else { throw CacheDownloadError.invalidResponse }
-            expectedByteCount = completeLength
-        } else if response.expectedContentLength > 0 {
-            expectedByteCount = response.expectedContentLength
-            guard expectedByteCount == fileSize else { throw CacheDownloadError.invalidResponse }
-        } else {
-            expectedByteCount = nil
-        }
-
-        return DownloadedAudio(url: url, mimeType: mimeType, expectedByteCount: expectedByteCount)
-    }
-
-    private func completeRangeLength(_ value: String) -> Int64? {
-        let components = value.lowercased().replacingOccurrences(of: "bytes ", with: "").split(separator: "/")
-        guard components.count == 2,
-              let total = Int64(components[1]),
-              total > 0 else { return nil }
-        let bounds = components[0].split(separator: "-").compactMap { Int64($0) }
-        guard bounds.count == 2,
-              bounds[0] == 0,
-              bounds[1] + 1 == total else { return nil }
-        return total
-    }
-
-    private func cancelPendingCacheTasks() {
-        let waitingKeys = audioCacheStates.compactMap { key, state in state == .waiting ? key : nil }
-        for key in waitingKeys {
-            cacheTasks[key]?.cancel()
-            cacheTasks[key] = nil
-            cacheTaskIDs[key] = nil
-            audioCacheStates[key] = .notCached
-        }
-    }
-
-    private func finishCacheTask(for key: String, taskID: UUID) {
-        guard cacheTaskIDs[key] == taskID else { return }
-        cacheTasks[key] = nil
-        cacheTaskIDs[key] = nil
     }
 
     private func startProgressLoop() {

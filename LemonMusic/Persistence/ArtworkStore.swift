@@ -20,25 +20,48 @@ final class ArtworkStore {
     }
 
     func image(for track: MusicTrack, api: LemonAPIClient) async -> UIImage? {
-        if let image = memory[track.id] { touch(track.id); return image }
-        let diskURL = fileURL(for: track.id)
+        await image(key: track.id, targetSize: CGSize(width: 900, height: 900)) {
+            try? await api.coverData(for: track)
+        }
+    }
+
+    func image(for album: MusicAlbum) async -> UIImage? {
+        guard let rawURL = album.artworkURL, let url = URL(string: rawURL) else { return nil }
+        return await image(key: "album:\(album.id)", targetSize: CGSize(width: 600, height: 600)) {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 20
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            guard let result = try? await URLSession.shared.data(for: request),
+                  let response = result.1 as? HTTPURLResponse,
+                  response.statusCode == 200 else { return nil }
+            return result.0
+        }
+    }
+
+    private func image(
+        key: String,
+        targetSize: CGSize,
+        loader: @escaping () async -> Data?
+    ) async -> UIImage? {
+        if let image = memory[key] { touch(key); return image }
+        let diskURL = fileURL(for: key)
         if let image = UIImage(contentsOfFile: diskURL.path) {
-            storeMemory(image, key: track.id)
+            storeMemory(image, key: key)
             return image
         }
-        if let inflight = inflight[track.id] { return await inflight.value }
+        if let inflight = inflight[key] { return await inflight.value }
 
         let task = Task<UIImage?, Never> {
-            guard let data = try? await api.coverData(for: track),
-                  let image = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 900, height: 900)) else { return nil }
+            guard let data = await loader(),
+                  let image = UIImage(data: data)?.preparingThumbnail(of: targetSize) else { return nil }
             let encoded = image.jpegData(compressionQuality: 0.88) ?? data
             try? encoded.write(to: diskURL, options: .atomic)
             return image
         }
-        inflight[track.id] = task
+        inflight[key] = task
         let image = await task.value
-        inflight[track.id] = nil
-        if let image { storeMemory(image, key: track.id) }
+        inflight[key] = nil
+        if let image { storeMemory(image, key: key) }
         return image
     }
 
@@ -88,4 +111,3 @@ final class ArtworkStore {
         }
     }
 }
-

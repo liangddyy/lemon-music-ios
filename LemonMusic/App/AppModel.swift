@@ -147,7 +147,7 @@ final class AppModel {
             cacheStore.save(sources, for: "search.sources", ttl: 24 * 60 * 60)
             cacheStore.save(userData, for: "library.userData")
             sessionState = .ready
-            await refreshDiscover(force: force)
+            await refreshDiscover(force: false)
         } catch LemonAPIClient.APIError.unauthorized {
             keychain.delete(tokenKey)
             sessionState = .signedOut
@@ -160,7 +160,8 @@ final class AppModel {
     func refreshDiscover(force: Bool = false) async {
         guard !selectedSourceID.isEmpty else { return }
         let cachePrefix = "discover.\(selectedSourceID)"
-        if !force, cacheStore.isFresh(cachePrefix + ".songs") {
+        let cacheKeys = [".songs", ".albums", ".toplists"].map { cachePrefix + $0 }
+        if !force, cacheKeys.allSatisfy(cacheStore.isFresh) {
             loadDiscoverCache(prefix: cachePrefix)
             return
         }
@@ -172,9 +173,10 @@ final class AppModel {
             discoverSongs = result.0
             discoverAlbums = result.1
             toplists = result.2
-            cacheStore.save(discoverSongs, for: cachePrefix + ".songs", ttl: 30 * 60)
-            cacheStore.save(discoverAlbums, for: cachePrefix + ".albums", ttl: 30 * 60)
-            cacheStore.save(toplists, for: cachePrefix + ".toplists", ttl: 30 * 60)
+            let discoverTTL: TimeInterval = 6 * 60 * 60
+            cacheStore.save(discoverSongs, for: cachePrefix + ".songs", ttl: discoverTTL)
+            cacheStore.save(discoverAlbums, for: cachePrefix + ".albums", ttl: discoverTTL)
+            cacheStore.save(toplists, for: cachePrefix + ".toplists", ttl: discoverTTL)
         } catch {
             loadDiscoverCache(prefix: cachePrefix)
             errorMessage = error.localizedDescription

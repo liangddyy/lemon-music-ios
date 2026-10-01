@@ -216,7 +216,7 @@
 			mainGroup = DBA4A7482F9BBFCB008BC5A9;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */,
+				DB2EFE072FBF805C00C2C11F /* XCLocalSwiftPackageReference "Vendor/AudioStreaming" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DBA4A7522F9BBFCB008BC5A9 /* Products */;
@@ -659,21 +659,17 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/dimitris-c/AudioStreaming";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.4.4;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		DB2EFE072FBF805C00C2C11F /* XCLocalSwiftPackageReference "Vendor/AudioStreaming" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/AudioStreaming;
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		DB2EFE082FBF805C00C2C11F /* AudioStreaming */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */;
+			package = DB2EFE072FBF805C00C2C11F /* XCLocalSwiftPackageReference "Vendor/AudioStreaming" */;
 			productName = AudioStreaming;
 		};
 /* End XCSwiftPackageProductDependency section */

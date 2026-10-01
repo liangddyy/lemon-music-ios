@@ -69,6 +69,42 @@ struct CacheStoreTests {
         }
     }
 
+    @Test func progressiveCacheReusesContiguousPrefixAfterRestart() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("progressive-cache-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = "online:wy:song"
+        let firstHalf = Data(repeating: 0x55, count: 2_048)
+
+        let first = ProgressiveAudioCache(directory: directory)
+        first.configure(
+            key: key,
+            totalLength: 4_096,
+            mimeType: "audio/mpeg",
+            headerLength: 0,
+            remoteDataOffset: 0
+        )
+        first.store(data: firstHalf, at: 0, for: key)
+        #expect(first.cachedByteCount(for: key) == 2_048)
+
+        let restored = ProgressiveAudioCache(directory: directory)
+        restored.configure(
+            key: key,
+            totalLength: 4_096,
+            mimeType: "audio/mpeg",
+            headerLength: 0,
+            remoteDataOffset: 0
+        )
+        #expect(restored.cachedByteCount(for: key) == 2_048)
+        #expect(restored.data(for: key, offset: 0, length: 2_048) == firstHalf)
+
+        var completion: ProgressiveAudioCache.Completion?
+        restored.onComplete = { completion = $0 }
+        restored.store(data: Data(repeating: 0x66, count: 2_048), at: 2_048, for: key)
+        restored.complete(key: key)
+        #expect(completion?.byteCount == 4_096)
+    }
+
     private func temporaryAudioFile(byte: UInt8, count: Int) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data(repeating: byte, count: count).write(to: url)
