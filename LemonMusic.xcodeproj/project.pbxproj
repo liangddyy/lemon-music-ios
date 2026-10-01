@@ -1,0 +1,775 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		DB04DC0F2FB3CA280077CCD3 /* fr.mathieu-dubart.CassetteWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DBBC62D52FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DB2EFE092FBF805C00C2C11F /* AudioStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = DB2EFE082FBF805C00C2C11F /* AudioStreaming */; };
+		DB4F5D3E3010E1F4004C2F1F /* SwiftMuse in Frameworks */ = {isa = PBXBuildFile; productRef = DB4F5D3D3010E1F4004C2F1F /* SwiftMuse */; };
+		DB7F563A60958C3AB310DA06 /* supporters.json in Resources */ = {isa = PBXBuildFile; fileRef = DBA66631CD5B9A8BF5668E78 /* supporters.json */; };
+		DBA4A77D2F9BE3C8008BC5A9 /* SwiftSonic in Frameworks */ = {isa = PBXBuildFile; productRef = DBA4A77C2F9BE3C8008BC5A9 /* SwiftSonic */; };
+		DBBC62D82FB3B9A600010D3F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBBC62D72FB3B9A600010D3F /* WidgetKit.framework */; };
+		DBBC62DA2FB3B9A600010D3F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBBC62D92FB3B9A600010D3F /* SwiftUI.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */		DB04DC0C2FB3C9EE0077CCD3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DBBC62D42FB3B9A600010D3F;
+			remoteInfo = "fr.mathieu-dubart.CassetteWidgetsExtension";
+		};		DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DBA4A7502F9BBFCB008BC5A9;
+			remoteInfo = LemonMusic;
+		};
+		DBA4A7692F9BBFCC008BC5A9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DBA4A7502F9BBFCB008BC5A9;
+			remoteInfo = LemonMusic;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section *//* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LemonMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBA66631CD5B9A8BF5668E78 /* supporters.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = supporters.json; sourceTree = "<group>"; };
+		DBBC62D52FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "fr.mathieu-dubart.CassetteWidgetsExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBBC62D72FB3B9A600010D3F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		DBBC62D92FB3B9A600010D3F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		DBBC62EB2FB3BD0800010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "fr.mathieu-dubart.CassetteWidgetsExtension.entitlements"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DBA4A8F62F9C0A1F008BC5A9 /* Exceptions for "LemonMusic" folder in "LemonMusic" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
+		};		DBBC62ED2FB3BD3000010D3F /* Exceptions for "Cassette" folder in "fr.mathieu-dubart.CassetteWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Shared/NowPlayingBridge.swift,
+				Shared/PlayPauseIntent.swift,
+				Shared/SharedNowPlayingState.swift,
+				Shared/SharedStorage.swift,
+				Shared/WidgetKind.swift,
+			);
+			target = DBBC62D42FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DBA4A8F62F9C0A1F008BC5A9 /* Exceptions for "LemonMusic" folder in "LemonMusic" target */,
+			);
+			path = LemonMusic;
+			sourceTree = "<group>";
+		};
+		DBA4A7612F9BBFCC008BC5A9 /* LemonMusicTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LemonMusicTests;
+			sourceTree = "<group>";
+		};
+		DBA4A76B2F9BBFCC008BC5A9 /* LemonMusicUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LemonMusicUITests;
+			sourceTree = "<group>";
+		};/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DBA4A74E2F9BBFCB008BC5A9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DB2EFE092FBF805C00C2C11F /* AudioStreaming in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A75B2F9BBFCC008BC5A9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A7652F9BBFCC008BC5A9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DBA4A7482F9BBFCB008BC5A9 = {
+			isa = PBXGroup;
+			children = (
+				DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */,
+				DBA4A7612F9BBFCC008BC5A9 /* LemonMusicTests */,
+				DBA4A76B2F9BBFCC008BC5A9 /* LemonMusicUITests */,
+				DBA4A7522F9BBFCB008BC5A9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DBA4A7522F9BBFCB008BC5A9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */,
+				DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */,
+				DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DBA4A7722F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusic" */;
+			buildPhases = (
+				DBA4A74D2F9BBFCB008BC5A9 /* Sources */,
+				DBA4A74E2F9BBFCB008BC5A9 /* Frameworks */,
+				DBA4A74F2F9BBFCB008BC5A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */,
+			);
+			name = LemonMusic;
+			packageProductDependencies = (
+				DB2EFE082FBF805C00C2C11F /* AudioStreaming */,
+			);
+			productName = LemonMusic;
+			productReference = DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DBA4A75D2F9BBFCC008BC5A9 /* LemonMusicTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DBA4A7752F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusicTests" */;
+			buildPhases = (
+				DBA4A75A2F9BBFCC008BC5A9 /* Sources */,
+				DBA4A75B2F9BBFCC008BC5A9 /* Frameworks */,
+				DBA4A75C2F9BBFCC008BC5A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DBA4A7602F9BBFCC008BC5A9 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DBA4A7612F9BBFCC008BC5A9 /* LemonMusicTests */,
+			);
+			name = LemonMusicTests;
+			packageProductDependencies = (
+			);
+			productName = LemonMusicTests;
+			productReference = DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DBA4A7672F9BBFCC008BC5A9 /* LemonMusicUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DBA4A7782F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusicUITests" */;
+			buildPhases = (
+				DBA4A7642F9BBFCC008BC5A9 /* Sources */,
+				DBA4A7652F9BBFCC008BC5A9 /* Frameworks */,
+				DBA4A7662F9BBFCC008BC5A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DBA4A76A2F9BBFCC008BC5A9 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DBA4A76B2F9BBFCC008BC5A9 /* LemonMusicUITests */,
+			);
+			name = LemonMusicUITests;
+			packageProductDependencies = (
+			);
+			productName = LemonMusicUITests;
+			productReference = DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DBA4A7492F9BBFCB008BC5A9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					DBA4A7502F9BBFCB008BC5A9 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					DBA4A75D2F9BBFCC008BC5A9 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = DBA4A7502F9BBFCB008BC5A9;
+					};
+					DBA4A7672F9BBFCC008BC5A9 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = DBA4A7502F9BBFCB008BC5A9;
+					};
+				};
+			};
+			buildConfigurationList = DBA4A74C2F9BBFCB008BC5A9 /* Build configuration list for PBXProject "LemonMusic" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = DBA4A7482F9BBFCB008BC5A9;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DBA4A7522F9BBFCB008BC5A9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */,
+				DBA4A75D2F9BBFCC008BC5A9 /* LemonMusicTests */,
+				DBA4A7672F9BBFCC008BC5A9 /* LemonMusicUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DBA4A74F2F9BBFCB008BC5A9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A75C2F9BBFCC008BC5A9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A7662F9BBFCC008BC5A9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DBA4A74D2F9BBFCB008BC5A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A75A2F9BBFCC008BC5A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBA4A7642F9BBFCC008BC5A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */		DB04DC0D2FB3C9EE0077CCD3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DBBC62D42FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension */;
+			targetProxy = DB04DC0C2FB3C9EE0077CCD3 /* PBXContainerItemProxy */;
+		};		DBA4A7602F9BBFCC008BC5A9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
+			targetProxy = DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */;
+		};
+		DBA4A76A2F9BBFCC008BC5A9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
+			targetProxy = DBA4A7692F9BBFCC008BC5A9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DBA4A7702F9BBFCC008BC5A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = LK2358MPL8;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.12.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DBA4A7712F9BBFCC008BC5A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = LK2358MPL8;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		DBA4A7732F9BBFCC008BC5A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "LemonMusic/LemonMusic-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LemonMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "柠檬音乐";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "柠檬音乐需要访问局域网中的 Lemon Music 服务器。";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music;
+				PRODUCT_NAME = LemonMusic;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		DBA4A7742F9BBFCC008BC5A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "LemonMusic/LemonMusic-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LemonMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "柠檬音乐";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "柠檬音乐需要访问局域网中的 Lemon Music 服务器。";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music;
+				PRODUCT_NAME = LemonMusic;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		DBA4A7762F9BBFCC008BC5A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.musicTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LemonMusic.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LemonMusic";
+				XROS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		DBA4A7772F9BBFCC008BC5A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.musicTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LemonMusic.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LemonMusic";
+				XROS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+		DBA4A7792F9BBFCC008BC5A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.musicUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = LemonMusic;
+				XROS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		DBA4A77A2F9BBFCC008BC5A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.musicUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = LemonMusic;
+				XROS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};		DBBC62EA2FB3B9A700010D3F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "fr.mathieu-dubart.CassetteWidgetsExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "fr.mathieu-dubart.CassetteWidgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = widgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.12.0;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "Cassette Widgets Developer ID";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DBA4A74C2F9BBFCB008BC5A9 /* Build configuration list for PBXProject "LemonMusic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DBA4A7702F9BBFCC008BC5A9 /* Debug */,
+				DBA4A7712F9BBFCC008BC5A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DBA4A7722F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DBA4A7732F9BBFCC008BC5A9 /* Debug */,
+				DBA4A7742F9BBFCC008BC5A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DBA4A7752F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusicTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DBA4A7762F9BBFCC008BC5A9 /* Debug */,
+				DBA4A7772F9BBFCC008BC5A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DBA4A7782F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusicUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DBA4A7792F9BBFCC008BC5A9 /* Debug */,
+				DBA4A77A2F9BBFCC008BC5A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/dimitris-c/AudioStreaming";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.4.4;
+			};
+		};
+		DB4F5D3C3010E1F4004C2F1F /* XCRemoteSwiftPackageReference "SwiftMuse" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/cassettelab/SwiftMuse";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
+		DBA4A77B2F9BE3C8008BC5A9 /* XCRemoteSwiftPackageReference "swiftsonic" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/MathieuDubart/swiftsonic";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.8.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DB2EFE082FBF805C00C2C11F /* AudioStreaming */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */;
+			productName = AudioStreaming;
+		};
+		DB4F5D3D3010E1F4004C2F1F /* SwiftMuse */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DB4F5D3C3010E1F4004C2F1F /* XCRemoteSwiftPackageReference "SwiftMuse" */;
+			productName = SwiftMuse;
+		};
+		DBA4A77C2F9BE3C8008BC5A9 /* SwiftSonic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DBA4A77B2F9BE3C8008BC5A9 /* XCRemoteSwiftPackageReference "swiftsonic" */;
+			productName = SwiftSonic;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
+}
