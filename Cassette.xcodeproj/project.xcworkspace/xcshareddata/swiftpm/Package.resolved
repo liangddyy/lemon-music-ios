@@ -1,0 +1,51 @@
+{
+  "originHash" : "152d64c72a704cef76b9ffaff758b7ba8dc0ff8eb3168325a80e9c5fdcfc3b44",
+  "pins" : [
+    {
+      "identity" : "audiostreaming",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/dimitris-c/AudioStreaming",
+      "state" : {
+        "revision" : "a729ee28fece29d80a749419d96df0693200f124",
+        "version" : "1.4.4"
+      }
+    },
+    {
+      "identity" : "ogg-binary-xcframework",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sbooth/ogg-binary-xcframework",
+      "state" : {
+        "revision" : "c0e822e18738ad913864e98d9614927ac1e9337c",
+        "version" : "0.1.2"
+      }
+    },
+    {
+      "identity" : "swiftmuse",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/cassettelab/SwiftMuse",
+      "state" : {
+        "revision" : "4bf806ae3c3ac6b51d89ad9f0649ae13deb6ceaa",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "swiftsonic",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/MathieuDubart/swiftsonic",
+      "state" : {
+        "revision" : "9ba4b2eb7fcc841a6a6887c96929565b66f8fa90",
+        "version" : "0.9.0"
+      }
+    },
+    {
+      "identity" : "vorbis-binary-xcframework",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sbooth/vorbis-binary-xcframework",
+      "state" : {
+        "revision" : "842020eabcebe410e698c68545d6597b2d232e51",
+        "version" : "0.1.2"
+      }
+    }
+  ],
+  "version" : 3
+}

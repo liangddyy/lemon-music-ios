@@ -1,0 +1,157 @@
+name: CI
+
+# Verification only: builds both platforms and runs the test suite on every
+# pull request, including pull requests from forks. Nothing here needs a secret
+# — signing is disabled — so contributions from forks get the same checks as
+# branches on this repository. Release signing and notarisation stay in
+# release.yml, which runs on tags.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# A new push to a pull request supersedes the run in flight. Pushes to `main` never
+# supersede each other.
+#
+# Every non-PR event keys the group on `github.run_id`, which is unique per run, so no two
+# `main` runs ever share a group — they cannot cancel each other and cannot queue behind
+# each other either. `cancel-in-progress` then states the same rule directly, so neither
+# half depends on the other being read correctly.
+#
+# Both halves are needed. Sharing one group per branch and only setting
+# `cancel-in-progress: false` is not enough: GitHub keeps a single pending run per group and
+# cancels the older one as soon as a third arrives, so merges landing together would still
+# lose a run — just at a different moment.
+#
+# This is not hypothetical. Two merges seconds apart shared the group `ci-CI-refs/heads/main`
+# and the second cancelled the first. A cancelled run reports no failure, so a break on
+# `main` stayed invisible for four and a half days and the blame landed on an unrelated
+# documentation PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PROJECT: Cassette.xcodeproj
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS
+            destination: generic/platform=iOS Simulator
+          - name: macOS
+            destination: generic/platform=macOS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Cache resolved Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # `-scheme Cassette ... build` compiles the app and the widgets, and NOT the test
+      # target — so this job stayed green on a test-target break and a green "Build iOS"
+      # meant less than it looked like it meant. The PSDownloadStub break is the case in
+      # point: only the test job could fail on it, and that run had been cancelled.
+      #
+      # The test scheme with `build-for-testing` compiles app, widgets AND tests, so the
+      # check now covers what its name suggests. Measured cost of the extra target, three
+      # clean runs each, warm SPM cache, local M-series: iOS 27.7s -> 29.7s (+2.0s), macOS
+      # 28.3s -> 31.3s (+3.0s) — 7-11%. On CI it adds no wall-clock at all: these jobs run
+      # beside the test job, and they finish in 2.5-3.5 min against its 5-7 min, so the
+      # extra ~10-25s is absorbed by headroom that was already there.
+      #
+      # `build-for-testing` still writes Cassette.app to Build/Products, which is what the
+      # localization check below reads; the test bundle lands in its PlugIns.
+      #
+      # The job name is deliberately unchanged: it is a required check in branch protection,
+      # and renaming it would silently stop that rule matching anything.
+      - name: Build app, widgets and test target
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme CassetteTests \
+            -destination '${{ matrix.destination }}' \
+            -configuration Debug \
+            -clonedSourcePackagesDirPath .spm \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing 2>&1 | tee build.log
+
+      - name: Fail on compiler warnings
+        run: .github/scripts/check-warnings.sh build.log
+
+      # Reads the COMPILED bundle, not the catalog: an entry whose languages sit at the
+      # entry's root instead of under "localizations" compiles cleanly, looks right in
+      # Xcode, and ships English to all eight languages. Only the built .strings shows it.
+      - name: Verify localized strings resolve
+        run: .github/scripts/verify-i18n.py build/DerivedData/Build/Products
+
+  test:
+    name: Test suite
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Cache resolved Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Device names move with every Xcode release ("iPhone 16 Pro" is already
+      # gone from the newest runtime), so the destination is resolved at run
+      # time instead of pinned.
+      - name: Select an iPhone simulator
+        id: simulator
+        run: |
+          udid=$(python3 .github/scripts/pick-simulator.py)
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme CassetteTests \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -configuration Debug \
+            -clonedSourcePackagesDirPath .spm \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee test.log
+
+      - name: Fail on compiler warnings in tests
+        run: .github/scripts/check-warnings.sh test.log
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7
