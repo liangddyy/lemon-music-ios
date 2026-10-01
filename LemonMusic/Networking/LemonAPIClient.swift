@@ -219,8 +219,11 @@ actor LemonAPIClient {
     func lyrics(for track: MusicTrack) async throws -> String {
         var body = track.snapshotJSON.object ?? [:]
         if let source = track.locator.source { body["source"] = .string(source) }
+        body["preferWords"] = .bool(true)
         let root = try await request("/play/lyric", method: "POST", body: .object(body), timeout: 30)
-        return root["lyric"]?.string ?? root["data"]?["lyric"]?.string ?? ""
+        let data = root["data"] ?? root
+        let wordTimed = data["ylyric"]?.string ?? ""
+        return wordTimed.isEmpty ? (data["lyric"]?.string ?? "") : wordTimed
     }
 
     func coverData(for track: MusicTrack) async throws -> Data? {

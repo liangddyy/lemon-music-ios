@@ -7,22 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DB04DC0F2FB3CA280077CCD3 /* fr.mathieu-dubart.CassetteWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DBBC62D52FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DB2EFE092FBF805C00C2C11F /* AudioStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = DB2EFE082FBF805C00C2C11F /* AudioStreaming */; };
-		DB4F5D3E3010E1F4004C2F1F /* SwiftMuse in Frameworks */ = {isa = PBXBuildFile; productRef = DB4F5D3D3010E1F4004C2F1F /* SwiftMuse */; };
-		DB7F563A60958C3AB310DA06 /* supporters.json in Resources */ = {isa = PBXBuildFile; fileRef = DBA66631CD5B9A8BF5668E78 /* supporters.json */; };
-		DBA4A77D2F9BE3C8008BC5A9 /* SwiftSonic in Frameworks */ = {isa = PBXBuildFile; productRef = DBA4A77C2F9BE3C8008BC5A9 /* SwiftSonic */; };
-		DBBC62D82FB3B9A600010D3F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBBC62D72FB3B9A600010D3F /* WidgetKit.framework */; };
-		DBBC62DA2FB3B9A600010D3F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBBC62D92FB3B9A600010D3F /* SwiftUI.framework */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */		DB04DC0C2FB3C9EE0077CCD3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DBBC62D42FB3B9A600010D3F;
-			remoteInfo = "fr.mathieu-dubart.CassetteWidgetsExtension";
-		};		DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */ = {
+/* Begin PBXContainerItemProxy section */
+		DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
 			proxyType = 1;
@@ -38,17 +27,10 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section *//* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LemonMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		DBA66631CD5B9A8BF5668E78 /* supporters.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = supporters.json; sourceTree = "<group>"; };
-		DBBC62D52FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "fr.mathieu-dubart.CassetteWidgetsExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		DBBC62D72FB3B9A600010D3F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
-		DBBC62D92FB3B9A600010D3F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		DBBC62EB2FB3BD0800010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "fr.mathieu-dubart.CassetteWidgetsExtension.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -58,16 +40,6 @@
 				Info.plist,
 			);
 			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
-		};		DBBC62ED2FB3BD3000010D3F /* Exceptions for "Cassette" folder in "fr.mathieu-dubart.CassetteWidgetsExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Shared/NowPlayingBridge.swift,
-				Shared/PlayPauseIntent.swift,
-				Shared/SharedNowPlayingState.swift,
-				Shared/SharedStorage.swift,
-				Shared/WidgetKind.swift,
-			);
-			target = DBBC62D42FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -89,7 +61,8 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LemonMusicUITests;
 			sourceTree = "<group>";
-		};/* End PBXFileSystemSynchronizedRootGroup section */
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		DBA4A74E2F9BBFCB008BC5A9 /* Frameworks */ = {
@@ -113,7 +86,8 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-		};/* End PBXFrameworksBuildPhase section */
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		DBA4A7482F9BBFCB008BC5A9 = {
@@ -135,7 +109,8 @@
 			);
 			name = Products;
 			sourceTree = "<group>";
-		};/* End PBXGroup section */
+		};
+/* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
 		DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */ = {
@@ -206,7 +181,8 @@
 			productName = LemonMusicUITests;
 			productReference = DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
-		};/* End PBXNativeTarget section */
+		};
+/* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		DBA4A7492F9BBFCB008BC5A9 /* Project object */ = {
@@ -275,7 +251,8 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-		};/* End PBXResourcesBuildPhase section */
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		DBA4A74D2F9BBFCB008BC5A9 /* Sources */ = {
@@ -298,13 +275,11 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-		};/* End PBXSourcesBuildPhase section */
+		};
+/* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */		DB04DC0D2FB3C9EE0077CCD3 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DBBC62D42FB3B9A600010D3F /* fr.mathieu-dubart.CassetteWidgetsExtension */;
-			targetProxy = DB04DC0C2FB3C9EE0077CCD3 /* PBXContainerItemProxy */;
-		};		DBA4A7602F9BBFCC008BC5A9 /* PBXTargetDependency */ = {
+/* Begin PBXTargetDependency section */
+		DBA4A7602F9BBFCC008BC5A9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
 			targetProxy = DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */;
@@ -642,49 +617,6 @@
 				XROS_DEPLOYMENT_TARGET = 26.4;
 			};
 			name = Release;
-		};		DBBC62EA2FB3B9A700010D3F /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = "fr.mathieu-dubart.CassetteWidgetsExtension.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = MSRV7PSAMR;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "fr.mathieu-dubart.CassetteWidgets/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = widgets;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-					"@executable_path/../../../../Frameworks",
-				);
-				MARKETING_VERSION = 1.12.0;
-				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music.widgets;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "Cassette Widgets Developer ID";
-				REGISTER_APP_GROUPS = YES;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.4;
-			};
-			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -724,7 +656,8 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
-		};/* End XCConfigurationList section */
+		};
+/* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */ = {
@@ -735,22 +668,6 @@
 				minimumVersion = 1.4.4;
 			};
 		};
-		DB4F5D3C3010E1F4004C2F1F /* XCRemoteSwiftPackageReference "SwiftMuse" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/cassettelab/SwiftMuse";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.1.0;
-			};
-		};
-		DBA4A77B2F9BE3C8008BC5A9 /* XCRemoteSwiftPackageReference "swiftsonic" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/MathieuDubart/swiftsonic";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.8.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -758,16 +675,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DB2EFE072FBF805C00C2C11F /* XCRemoteSwiftPackageReference "AudioStreaming" */;
 			productName = AudioStreaming;
-		};
-		DB4F5D3D3010E1F4004C2F1F /* SwiftMuse */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DB4F5D3C3010E1F4004C2F1F /* XCRemoteSwiftPackageReference "SwiftMuse" */;
-			productName = SwiftMuse;
-		};
-		DBA4A77C2F9BE3C8008BC5A9 /* SwiftSonic */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DBA4A77B2F9BE3C8008BC5A9 /* XCRemoteSwiftPackageReference "swiftsonic" */;
-			productName = SwiftSonic;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

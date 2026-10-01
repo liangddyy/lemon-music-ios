@@ -42,6 +42,32 @@ struct LemonAPIClientTests {
         #expect(login.token == "jwt")
         #expect(await client.selectedAPIPrefix() == "/api")
     }
+
+    @Test func lyricsRequestPrefersWordTimedResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/play/lyric")
+            #expect(request.httpMethod == "POST")
+            let body = try request.bodyData()
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(object["preferWords"] as? Bool == true)
+            let response = #"{"ok":true,"lyric":"[00:01.00]Line","ylyric":"[1000,500](0,500,0)Word"}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(response.utf8))
+        }
+
+        let track = try #require(MusicTrack(json: .object([
+            "filePath": .string("/music/song.mp3"),
+            "title": .string("Song"),
+            "artist": .string("Artist"),
+        ])))
+        let client = LemonAPIClient(session: session)
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+
+        let value = try await client.lyrics(for: track)
+        #expect(value == "[1000,500](0,500,0)Word")
+    }
 }
 
 private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
@@ -61,4 +87,23 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         }
     }
     override func stopLoading() {}
+}
+
+private extension URLRequest {
+    func bodyData() throws -> Data {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { throw URLError(.cannotDecodeContentData) }
+        stream.open()
+        defer { stream.close() }
+
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
+            if count == 0 { break }
+            result.append(buffer, count: count)
+        }
+        return result
+    }
 }

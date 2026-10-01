@@ -10,25 +10,23 @@ struct MainTabView: View {
     private enum AppTab: Hashable { case home, discover, library, search }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            Tab("首页", systemImage: "house.fill", value: AppTab.home) {
-                NavigationStack { HomeView() }
-            }
-            Tab("发现", systemImage: "sparkles", value: AppTab.discover) {
-                NavigationStack { DiscoverView() }
-            }
-            Tab("音乐库", systemImage: "music.note.list", value: AppTab.library) {
-                NavigationStack { LibraryView() }
-            }
-            Tab(value: AppTab.search, role: .search) {
-                NavigationStack { SearchView() }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if model.playback.currentTrack != nil {
-                MiniPlayerView(showingPlayer: $showingPlayer)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 4)
+        Group {
+            if #available(iOS 26.0, *) {
+                tabs
+                    .tabViewBottomAccessory {
+                        if model.playback.currentTrack != nil {
+                            TabBarMiniPlayer(showingPlayer: $showingPlayer)
+                        }
+                    }
+            } else {
+                tabs
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        if model.playback.currentTrack != nil {
+                            MiniPlayerView(showingPlayer: $showingPlayer, presentation: .legacy)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 4)
+                        }
+                    }
             }
         }
         .fullScreenCover(isPresented: $showingPlayer) {
@@ -53,5 +51,35 @@ struct MainTabView: View {
         } message: {
             Text(model.playback.lastError ?? "请稍后重试")
         }
+    }
+
+    private var tabs: some View {
+        TabView(selection: $selectedTab) {
+            Tab("首页", systemImage: "house.fill", value: AppTab.home) {
+                NavigationStack { HomeView() }
+            }
+            Tab("发现", systemImage: "sparkles", value: AppTab.discover) {
+                NavigationStack { DiscoverView() }
+            }
+            Tab("音乐库", systemImage: "music.note.list", value: AppTab.library) {
+                NavigationStack { LibraryView() }
+            }
+            Tab(value: AppTab.search, role: .search) {
+                NavigationStack { SearchView() }
+            }
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+private struct TabBarMiniPlayer: View {
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    @Binding var showingPlayer: Bool
+
+    var body: some View {
+        MiniPlayerView(
+            showingPlayer: $showingPlayer,
+            presentation: placement == .inline ? .inlineAccessory : .expandedAccessory
+        )
     }
 }

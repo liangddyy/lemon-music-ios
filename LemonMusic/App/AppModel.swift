@@ -253,7 +253,7 @@ final class AppModel {
     }
 
     func lyrics(for track: MusicTrack) async -> String {
-        let key = "lyrics.\(track.id)"
+        let key = "lyrics.v2.\(track.id)"
         if let cached: String = cacheStore.value(String.self, for: key, allowExpired: false) { return cached }
         let value = (try? await api.lyrics(for: track)) ?? ""
         if !value.isEmpty { cacheStore.save(value, for: key, ttl: 30 * 24 * 60 * 60) }

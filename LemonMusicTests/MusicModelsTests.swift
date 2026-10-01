@@ -52,4 +52,39 @@ struct MusicModelsTests {
         #expect(track.locator.trackID == nil)
         #expect(track.locator.filePath == "/music/legacy.mp3")
     }
+
+    @Test func parsesTimedAndMultiTagLyrics() throws {
+        let document = LyricDocument(rawValue: """
+        [ar:Artist]
+        [00:01.20][00:03.40]First line
+        [00:05.500]<00:05.500>Second <00:06.000>line
+        """)
+
+        #expect(document.lines.map(\.text) == ["First line", "First line", "Second line"])
+        #expect(document.lines.map(\.time) == [1.2, 3.4, 5.5])
+        #expect(document.currentLineIndex(at: 3.5) == 1)
+    }
+
+    @Test func parsesWordTimedYRC() {
+        let document = LyricDocument(rawValue: """
+        [147,1740](0,240,0)前(240,360,0)端
+        [2500,1200](0,500,0)歌(500,500,0)词
+        """)
+
+        #expect(document.lines.map(\.text) == ["前端", "歌词"])
+        #expect(document.lines.map(\.time) == [0.147, 2.5])
+        #expect(document.currentLineIndex(at: 2.6) == 1)
+    }
+
+    @Test func keepsPlainLyricsWithoutTimeline() {
+        let document = LyricDocument(rawValue: """
+        [ti:Title]
+        First line
+        Second line
+        """)
+
+        #expect(document.lines.map(\.text) == ["First line", "Second line"])
+        #expect(document.hasTimestamps == false)
+        #expect(document.currentLineIndex(at: 5) == nil)
+    }
 }
