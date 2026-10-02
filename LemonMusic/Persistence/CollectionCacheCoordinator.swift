@@ -30,11 +30,12 @@ nonisolated struct CollectionCacheItem: Codable, Identifiable, Sendable {
     var transferID: UUID?
     var resumeData: Data? = nil
     var suspending: Bool?
-    var cacheKey: String { resolved?.id ?? track.id }
+    var quality: String?
+    var cacheKey: String { AudioVariant.key(for: resolved ?? track, quality: quality) }
 
     // Opaque resume data may include authenticated requests; persist it only in Keychain.
     private enum CodingKeys: String, CodingKey {
-        case id, track, resolved, state, progress, error, taskID, transferID, suspending
+        case id, track, resolved, state, progress, error, taskID, transferID, suspending, quality
     }
 
     var resumeStorageKey: String { "cache-resume.\(id.uuidString)" }
@@ -66,6 +67,7 @@ nonisolated struct CacheTransferTag: Codable, Sendable {
     let itemID: UUID
     let transferID: UUID
     let allowsCellular: Bool
+    var quality: String? = nil
 }
 
 @MainActor enum BackgroundCacheEvents {
@@ -85,6 +87,7 @@ final class CollectionCacheCoordinator {
     private let api: LemonAPIClient
     private let audioCache: AudioCache
     private let store: CacheStore
+    private let audioPolicy: AudioPlaybackPolicy?
     private var account: String?
     private var active = false
     private var preparation: Task<Void, Never>?
@@ -98,11 +101,14 @@ final class CollectionCacheCoordinator {
 
     init(
         api: LemonAPIClient, audioCache: AudioCache, store: CacheStore,
-        background: Bool = true, monitorNetwork: Bool = true, sessionIdentifier: String = CollectionCacheCoordinator.sessionIdentifier
+        background: Bool = true, monitorNetwork: Bool = true,
+        sessionIdentifier: String = CollectionCacheCoordinator.sessionIdentifier,
+        audioPolicy: AudioPlaybackPolicy? = nil
     ) {
         self.api = api
         self.audioCache = audioCache
         self.store = store
+        self.audioPolicy = audioPolicy
         let bridge = CacheDownloadDelegate()
         self.bridge = bridge
         let configuration = background
@@ -252,7 +258,7 @@ final class CollectionCacheCoordinator {
         let tasks = await session.allTasks
         for task in tasks {
             guard let tag = Self.tag(for: task), accepts(tag),
-                  let item = item(for: tag), item.cacheKey == track.id else { continue }
+                  let item = item(for: tag), (item.resolved ?? item.track).id == track.id else { continue }
             update(tag) { $0.state = .waitingPlayback; $0.suspending = true }
             let data: Data? = await withCheckedContinuation { continuation in
                 guard let download = task as? URLSessionDownloadTask else { task.cancel(); continuation.resume(returning: nil); return }
@@ -272,7 +278,13 @@ final class CollectionCacheCoordinator {
         let generation = generation
         preparation = Task { [weak self] in
             guard let self else { return }
-            defer { if self.generation == generation { self.preparation = nil } }
+            var needsAnotherPass = false
+            defer {
+                if self.generation == generation {
+                    self.preparation = nil
+                    if needsAnotherPass { self.pump() }
+                }
+            }
             for key in self.batches.keys.sorted() {
                 guard let batch = self.batches[key], !batch.paused, !batch.cancelled else { continue }
                 for index in batch.items.indices {
@@ -284,7 +296,7 @@ final class CollectionCacheCoordinator {
                         self.batches[key]?.items[index].state = .waitingWiFi
                         continue
                     }
-                    if self.audioCache.cachedURL(for: item.cacheKey) != nil {
+                    if self.audioCache.availableCache(for: item.resolved ?? item.track) != nil {
                         self.batches[key]?.items[index].state = .completed
                         self.batches[key]?.items[index].progress = 1
                         continue
@@ -297,17 +309,17 @@ final class CollectionCacheCoordinator {
                         guard self.generation == generation, !Task.isCancelled,
                               self.batches[key]?.paused == false, self.batches[key]?.cancelled == false else { continue }
                         self.batches[key]?.items[index].resolved = resolved
-                        if self.audioCache.cachedURL(for: resolved.id) != nil {
+                        if self.audioCache.availableCache(for: resolved) != nil {
                             self.batches[key]?.items[index].state = .completed
                             self.batches[key]?.items[index].progress = 1
                             continue
                         }
-                        if self.audioCache.playingKey == resolved.id {
+                        if AudioVariant.matches(self.audioCache.playingKey, trackID: resolved.id) {
                             self.batches[key]?.items[index].state = .waitingPlayback
                             continue
                         }
                         if self.batches.values.flatMap(\.items).contains(where: {
-                            $0.id != item.id && $0.cacheKey == resolved.id && $0.taskID != nil
+                            $0.id != item.id && ($0.resolved ?? $0.track).id == resolved.id && $0.taskID != nil
                         }) {
                             continue
                         }
@@ -315,17 +327,31 @@ final class CollectionCacheCoordinator {
                             self.batches[key]?.items[index].state = .waitingWiFi
                             continue
                         }
-                        try self.audioCache.makeRoom(for: 1_024, replacing: resolved.id)
-                        var request = try await self.api.audioDownloadRequest(for: resolved)
+                        let quality: String?
+                        if resolved.locator.kind == .local { quality = nil }
+                        else if let override = self.audioPolicy?.qualityOverride { quality = override }
+                        else { quality = try await self.api.serverPlayQuality() }
+                        if self.batches[key]?.items[index].quality != quality {
+                            self.batches[key]?.items[index].resumeData = nil
+                        }
+                        self.batches[key]?.items[index].quality = quality
+                        let cacheKey = AudioVariant.key(for: resolved, quality: quality)
+                        try self.audioCache.makeRoom(for: 1_024, replacing: cacheKey)
+                        var request = try await self.api.audioDownloadRequest(for: resolved, quality: quality)
                         guard self.generation == generation, !Task.isCancelled,
                               self.batches[key]?.paused == false, self.batches[key]?.cancelled == false else { continue }
-                        if self.audioCache.playingKey == resolved.id {
+                        if AudioVariant.matches(self.audioCache.playingKey, trackID: resolved.id) {
                             self.batches[key]?.items[index].state = .waitingPlayback
                             continue
                         }
+                        if resolved.locator.kind == .online, self.audioPolicy?.qualityOverride == "128k", quality != "128k" {
+                            self.batches[key]?.items[index].state = .waiting
+                            needsAnotherPass = true
+                            return
+                        }
                         request.allowsCellularAccess = batch.allowsCellular
                         let task: URLSessionDownloadTask
-                        if let data = item.resumeData {
+                        if let data = self.batches[key]?.items[index].resumeData {
                             task = self.session.downloadTask(withResumeData: data)
                         } else {
                             task = self.session.downloadTask(with: request)
@@ -333,7 +359,7 @@ final class CollectionCacheCoordinator {
                         let transfer = UUID()
                         let tag = CacheTransferTag(
                             account: batch.account, key: key, batchID: batch.id, itemID: item.id,
-                            transferID: transfer, allowsCellular: batch.allowsCellular
+                            transferID: transfer, allowsCellular: batch.allowsCellular, quality: quality
                         )
                         task.taskDescription = String(data: try JSONEncoder().encode(tag), encoding: .utf8)
                         self.batches[key]?.items[index].taskID = task.taskIdentifier
@@ -428,6 +454,7 @@ final class CollectionCacheCoordinator {
     func networkChanged(connected: Bool, cellular: Bool) {
         isConnected = connected
         isCellular = cellular
+        audioPolicy?.updateNetwork(cellular: cellular)
         if cellular {
             for key in batches.keys where batches[key]?.allowsCellular == false {
                 pauseTasks(key: key, state: .waitingWiFi)
@@ -453,6 +480,25 @@ final class CollectionCacheCoordinator {
         }
     }
 
+    func applyAudioPolicy() {
+        guard audioPolicy?.qualityOverride == "128k" else { return }
+        session.getAllTasks { [weak self] tasks in
+            guard let self else { return }
+            Task { @MainActor in
+                guard self.audioPolicy?.qualityOverride == "128k" else { return }
+                for task in tasks {
+                    guard let tag = Self.tag(for: task), self.accepts(tag),
+                          let item = self.item(for: tag), (item.resolved ?? item.track).locator.kind == .online,
+                          item.quality != "128k" else { continue }
+                    self.update(tag) { $0.quality = "128k"; $0.resumeData = nil; $0.progress = 0 }
+                    self.pauseTransfer(task, tag: tag, state: .waiting)
+                }
+                self.persist()
+                self.pump()
+            }
+        }
+    }
+
     private func pauseTransfer(_ task: URLSessionTask, tag: CacheTransferTag, state: CacheItemState) {
         update(tag) { $0.state = state; $0.suspending = true }
         guard let download = task as? URLSessionDownloadTask else { task.cancel(); return }
@@ -460,6 +506,7 @@ final class CollectionCacheCoordinator {
             guard let self else { return }
             Task { @MainActor in
                 let compatible = tag.allowsCellular == self.batches[tag.key]?.allowsCellular
+                    && tag.quality == self.item(for: tag)?.quality
                 self.update(tag) {
                     $0.resumeData = state == .cancelled || !compatible ? nil : data
                     $0.taskID = nil

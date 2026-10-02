@@ -59,8 +59,8 @@ struct MainTabView: View {
             }
         }
         .alert("无法播放", isPresented: Binding(
-            get: { model.playback.lastError != nil },
-            set: { if !$0 { model.playback.lastError = nil } }
+            get: { !showingPlayer && model.playback.lastError != nil },
+            set: { if !$0 && !showingPlayer { model.playback.lastError = nil } }
         )) {
             Button("知道了", role: .cancel) { model.playback.lastError = nil }
         } message: {

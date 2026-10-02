@@ -53,6 +53,7 @@ struct MiniPlayerView: View {
                     .frame(width: isInline ? 32 : 38, height: isInline ? 32 : 38)
             }
             .accessibilityLabel(model.playback.isPlaying ? "暂停" : "播放")
+            .disabled(model.playback.isLoadingTrack)
 
             if !isInline {
                 Button { Task { await model.playback.next() } } label: {
@@ -206,6 +207,23 @@ struct FullPlayerView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            if model.playback.isLoadingTrack || model.playback.isBuffering {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(model.playback.isLoadingTrack ? "正在加载音频" : "正在缓冲音频").font(.caption)
+                }
+                .accessibilityIdentifier("player.loading")
+            }
+            if let error = model.playback.lastError {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("重试", systemImage: "arrow.clockwise") { model.playback.resume() }
+                        .font(.caption)
+                        .accessibilityIdentifier("player.retry")
+                }
+                .accessibilityIdentifier("player.error")
+            }
         }
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { progressFrame = $0 }
     }
@@ -219,6 +237,9 @@ struct FullPlayerView: View {
                 Image(systemName: model.playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 72))
             }
+            .disabled(model.playback.isLoadingTrack)
+            .accessibilityIdentifier("player.playPause")
+            .accessibilityLabel(model.playback.isPlaying ? "暂停" : "播放")
             Button { Task { await model.playback.next() } } label: {
                 Image(systemName: "forward.fill").font(.system(size: 30))
             }

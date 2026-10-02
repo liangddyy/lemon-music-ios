@@ -17,7 +17,7 @@ final class BackgroundCacheTests: XCTestCase {
         }
         XCTAssertTrue(environment.coordinator.batches["one"]?.isFinished == true)
         XCTAssertTrue(environment.coordinator.batches["two"]?.isFinished == true)
-        XCTAssertNotNil(environment.cache.cachedURL(for: track.id))
+        XCTAssertNotNil(environment.cache.availableCache(for: track))
         let (data, _) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:18763/stats")!)
         let counts = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
         XCTAssertEqual(counts[track.locator.songID!], 1)
@@ -86,7 +86,7 @@ final class BackgroundCacheTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertTrue(environment.coordinator.batches["one"]?.isFinished == true)
-        XCTAssertNotNil(environment.cache.cachedURL(for: track.id))
+        XCTAssertNotNil(environment.cache.availableCache(for: track))
     }
 
     private func requireFixture() async throws {

@@ -14,6 +14,18 @@ struct SettingsView: View {
                 Button("更换服务器", role: .destructive) { Task { await model.changeServer(); dismiss() } }
             }
 
+            Section {
+                Toggle("省流模式", isOn: Binding(
+                    get: { model.audioPolicy.dataSaverEnabled },
+                    set: { model.audioPolicy.dataSaverEnabled = $0 }
+                ))
+                .accessibilityIdentifier("settings.dataSaver")
+            } header: {
+                Text("网络与音质")
+            } footer: {
+                Text("默认开启。蜂窝网络下，在线音源的播放和新缓存请求使用 128K；关闭后及 Wi-Fi 下遵循服务器播放音质设置。已有本机缓存直接复用，NAS 本地歌曲仍按原码率传输。正在播放的歌曲不会中断，下一次在线加载生效。")
+            }
+
             Section("音频缓存") {
                 Picker("缓存上限", selection: Binding(
                     get: { model.audioCache.maxBytes },

@@ -23,6 +23,8 @@ actor LemonAPIClient {
     private var baseURL: URL?
     private var token: String?
     private var apiPrefix = "/api/v1"
+    private var cachedPlayQuality: String?
+    private var playQualityUpdatedAt = Date.distantPast
 
     init(session: URLSession? = nil) {
         if let session {
@@ -38,6 +40,8 @@ actor LemonAPIClient {
     }
 
     func configure(baseURL: String, token: String?, apiPrefix: String? = nil) throws {
+        cachedPlayQuality = nil
+        playQualityUpdatedAt = .distantPast
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
@@ -262,8 +266,8 @@ actor LemonAPIClient {
         extractArray(try await request("/download/list")).compactMap { NASDownloadTask(json: $0) }
     }
 
-    func audioDownloadRequest(for track: MusicTrack, refresh: Bool = false) async throws -> URLRequest {
-        let url = try await resolvePlayURL(for: track, refresh: refresh)
+    func audioDownloadRequest(for track: MusicTrack, refresh: Bool = false, quality: String? = nil) async throws -> URLRequest {
+        let url = try await resolvePlayURL(for: track, refresh: refresh, quality: quality)
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
         if url.scheme == baseURL?.scheme, url.host == baseURL?.host, url.port == baseURL?.port,
@@ -282,7 +286,22 @@ actor LemonAPIClient {
         ]))
     }
 
-    func resolvePlayURL(for track: MusicTrack, refresh: Bool = false) async throws -> URL {
+    func serverPlayQuality(force: Bool = false) async throws -> String {
+        if !force, let cachedPlayQuality, Date().timeIntervalSince(playQualityUpdatedAt) < 60 { return cachedPlayQuality }
+        do {
+            let root = try await request("/settings")
+            let raw = (root["data"] ?? root)["player.playQuality"]?.string ?? "128k"
+            let allowed = ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"]
+            let quality = allowed.contains(raw) ? raw : "128k"
+            cachedPlayQuality = quality
+            playQualityUpdatedAt = Date()
+            return quality
+        } catch APIError.server(let status, _) where status == 404 {
+            return cachedPlayQuality ?? "128k"
+        }
+    }
+
+    func resolvePlayURL(for track: MusicTrack, refresh: Bool = false, quality: String? = nil) async throws -> URL {
         var body: [String: JSONValue] = ["refresh": .bool(refresh)]
         switch track.locator.kind {
         case .local:
@@ -291,7 +310,10 @@ actor LemonAPIClient {
         case .online:
             if let songID = track.locator.songID { body["songId"] = .string(songID) }
             if let source = track.locator.source { body["source"] = .string(source) }
-            body["quality"] = .string("320k")
+            let selectedQuality: String
+            if let quality { selectedQuality = quality }
+            else { selectedQuality = try await serverPlayQuality() }
+            body["quality"] = .string(selectedQuality)
             for (key, value) in track.locator.identifiers { body[key] = .string(value) }
         }
         let root = try await request("/play/url", method: "POST", body: .object(body), timeout: 30)

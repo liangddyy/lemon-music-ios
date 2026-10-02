@@ -1,6 +1,50 @@
 import XCTest
 
 final class LemonMusicUITests: XCTestCase {
+    func testRestoredMiniPlayerActuallyPlaysAfterAppRelaunch() {
+        let app = fixtures(extra: ["-uiTestingPersistentPlayback", "-uiTestingResetPlayback"])
+        for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
+        app.staticTexts["我的精选"].tap()
+        app.buttons["collection.playAll"].tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-uiTestingResetPlayback" }
+        app.launch()
+        let miniPlayer = app.buttons["miniPlayer.open"]
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 10))
+        miniPlayer.tap()
+        let button = app.buttons["player.playPause"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        XCTAssertEqual(button.label, "播放")
+        button.tap()
+        let playing = NSPredicate(format: "label == %@", "暂停")
+        expectation(for: playing, evaluatedWith: button)
+        waitForExpectations(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(button.label, "暂停")
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "player.error").firstMatch.exists)
+        attachment(app, name: "restored-playback")
+        app.buttons["player.close"].tap()
+    }
+
+    func testDataSaverSettingDefaultsOnAndHasNASScopeDescription() {
+        let app = fixtures()
+        app.buttons["设置"].tap()
+        let toggle = app.switches["settings.dataSaver"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "1")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        expectation(for: NSPredicate(format: "value == %@", "0"), evaluatedWith: toggle)
+        waitForExpectations(timeout: 3)
+        XCTAssertEqual(toggle.value as? String, "0")
+        attachment(app, name: "data-saver-settings")
+        app.buttons["完成"].tap()
+        app.buttons["设置"].tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "0")
+        app.buttons["完成"].tap()
+    }
+
     func testLyricsFillAreaAboveProgressAndHideTrackMetadata() {
         let app = fixtures()
         for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }

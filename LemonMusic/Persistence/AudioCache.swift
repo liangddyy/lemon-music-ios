@@ -48,7 +48,7 @@ final class AudioCache {
         }
     }
 
-    func cachedURL(for key: String) -> URL? {
+    func cachedURL(for key: String, touching: Bool = true) -> URL? {
         let context = container.mainContext
         var descriptor = FetchDescriptor<AudioCacheEntry>(predicate: #Predicate { $0.key == key })
         descriptor.fetchLimit = 1
@@ -61,9 +61,25 @@ final class AudioCache {
             try? context.save()
             return nil
         }
-        entry.lastAccessedAt = Date()
-        try? context.save()
+        if touching {
+            entry.lastAccessedAt = Date()
+            try? context.save()
+        }
         return url
+    }
+
+    func availableCache(for track: MusicTrack, touching: Bool = true) -> (key: String, url: URL)? {
+        if let url = cachedURL(for: track.id, touching: touching) { return (track.id, url) }
+        guard track.locator.kind == .online else { return nil }
+        let prefix = track.id + "|quality:"
+        let records = (try? container.mainContext.fetch(FetchDescriptor<AudioCacheEntry>(
+            predicate: #Predicate { $0.key.starts(with: prefix) },
+            sortBy: [SortDescriptor(\.lastAccessedAt, order: .reverse)]
+        ))) ?? []
+        for entry in records {
+            if let url = cachedURL(for: entry.key, touching: touching) { return (entry.key, url) }
+        }
+        return nil
     }
 
     func storeDownloadedFile(

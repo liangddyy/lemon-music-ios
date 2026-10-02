@@ -4,6 +4,46 @@ import Testing
 
 @Suite(.serialized)
 struct LemonAPIClientTests {
+    @Test func followsServerQualityUnlessCellularOverrideIsProvided() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            if request.url?.path.hasSuffix("/settings") == true {
+                _ = log.record("settings")
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"player.playQuality":"flac"}"#.utf8))
+            }
+            let body = try #require(JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any])
+            let call = log.record("play")
+            #expect(body["quality"] as? String == (call == 1 ? "128k" : "flac"))
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"url":"https://cdn.example.net/music.mp3"}"#.utf8))
+        }
+        let track = try #require(MusicTrack(json: .object(["source": .string("wy"), "songId": .string("1")])))
+        _ = try await client.resolvePlayURL(for: track, quality: "128k")
+        #expect(log.count("settings") == 0)
+        _ = try await client.resolvePlayURL(for: track)
+        _ = try await client.resolvePlayURL(for: track)
+        #expect(log.count("settings") == 1)
+    }
+
+    @MainActor @Test func playbackStartupTimeoutHasVisibleFailureAndIgnoresLateURL() async throws {
+        let client = try await stubClient()
+        URLProtocolStub.handler = { request in
+            Thread.sleep(forTimeInterval: 0.4)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"url":"https://cdn.example.net/music.mp3"}"#.utf8))
+        }
+        let store = try CacheStore(inMemory: true)
+        let player = PlaybackController(
+            api: client, audioCache: AudioCache(container: store.container), artworkStore: ArtworkStore(),
+            defaults: UserDefaults(suiteName: "timeout-test.\(UUID())")!, startupTimeout: .milliseconds(100)
+        )
+        let track = try #require(MusicTrack(json: .object(["filePath": .string("/unique-\(UUID()).mp3")])))
+        await player.play(track, in: [track])
+        #expect(player.lastError?.contains("超时") == true)
+        #expect(!player.isPlaying)
+        #expect(!player.isLoadingTrack)
+        player.stop()
+    }
+
     @Test func loginUsesV1BearerContract() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]

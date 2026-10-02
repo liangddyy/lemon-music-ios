@@ -2,7 +2,55 @@ import Foundation
 import Testing
 @testable import LemonMusic
 
+@Suite(.serialized)
 struct PlaybackRegressionTests {
+    @MainActor @Test func restoredQueueLoadsAudioOnFirstResumeAndKeepsSavedPosition() async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = "restore-tests.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let song = try track(id: UUID().uuidString, title: "Restored", artist: "Artist", duration: 20)
+        let file = root.appendingPathComponent("cached.wav")
+        try UITestAudio.silence().write(to: file)
+        _ = try cache.storeDownloadedFile(at: file, key: song.id, mimeType: "audio/wav", protectedKey: nil)
+        var queue = PlaybackQueue()
+        queue.replace(with: [song], selecting: song)
+        defaults.set(try JSONEncoder().encode(queue), forKey: "lemon.playback.state")
+        defaults.set(5.0, forKey: "lemon.playback.position")
+        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults)
+        defer { player.stop(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(player.currentTrack?.id == song.id)
+        #expect(player.position == 5)
+        #expect(!player.isPlaying)
+        player.resume()
+        try await Task.sleep(for: .milliseconds(300))
+        for _ in 0..<100 where !player.isPlaying { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(player.isPlaying)
+        #expect(player.lastError == nil)
+        #expect(player.position >= 4.5)
+        #expect(player.audioCacheState(for: song) == .cached)
+    }
+
+    @MainActor @Test func restoredQueueFailureProvidesReasonInsteadOfResumingEmptyEngine() async throws {
+        let store = try CacheStore(inMemory: true)
+        let cache = AudioCache(container: store.container)
+        let name = "restore-failure.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let song = try track(id: UUID().uuidString, title: "Unavailable", artist: "Artist")
+        var queue = PlaybackQueue()
+        queue.replace(with: [song], selecting: song)
+        defaults.set(try JSONEncoder().encode(queue), forKey: "lemon.playback.state")
+        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults)
+        defer { player.stop(); defaults.removePersistentDomain(forName: name) }
+        player.resume()
+        for _ in 0..<100 where player.lastError == nil { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(player.lastError?.contains("服务器地址") == true)
+        #expect(!player.isPlaying)
+        #expect(!player.isLoadingTrack)
+    }
+
     @Test func ignoresOldAndDuplicateEndEventsDuringABCDSelection() {
         var state = PlaybackRequestState()
         let a = state.begin()
@@ -80,7 +128,7 @@ struct PlaybackRegressionTests {
             try track(id: "\(prefix)-\($0)", title: $0, artist: "Artist", duration: 20)
         }
         defer {
-            player.pause()
+            player.stop()
             songs.forEach { cache.remove(for: $0.id) }
         }
         let audio = silentWAV()

@@ -55,6 +55,9 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 self.send_json(dict(COUNTS))
             return
+        if request.path.endswith("/settings"):
+            self.send_json({"player.playQuality": "320k"})
+            return
         if request.path != "/audio":
             self.send_error(404)
             return

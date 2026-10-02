@@ -38,6 +38,7 @@ final class AppModel {
     let audioCache: AudioCache
     let artworkStore = ArtworkStore()
     let playback: PlaybackController
+    let audioPolicy: AudioPlaybackPolicy
     let collectionCache: CollectionCacheCoordinator
     let nasDownloads: NASDownloadCoordinator
     let webSocket = LemonWebSocket()
@@ -55,18 +56,29 @@ final class AppModel {
 
     init(inMemory: Bool = false, api: LemonAPIClient = LemonAPIClient()) throws {
         self.api = api
-        preferences = inMemory ? UserDefaults(suiteName: "lemon.tests.\(UUID())")! : .standard
+        let arguments = ProcessInfo.processInfo.arguments
+        let persistentFixture = inMemory && arguments.contains("-uiTestingPersistentPlayback")
+        let suite = persistentFixture ? "lemon.ui.playback-restoration" : "lemon.tests.\(UUID())"
+        preferences = inMemory ? UserDefaults(suiteName: suite)! : .standard
+        if persistentFixture && arguments.contains("-uiTestingResetPlayback") {
+            preferences.removePersistentDomain(forName: suite)
+        }
+        audioPolicy = AudioPlaybackPolicy(defaults: preferences)
         cacheStore = try CacheStore(inMemory: inMemory)
         audioCache = AudioCache(
             container: cacheStore.container,
             root: inMemory ? FileManager.default.temporaryDirectory.appendingPathComponent("lemon-tests-\(UUID())") : nil
         )
-        playback = PlaybackController(api: api, audioCache: audioCache, artworkStore: artworkStore, defaults: preferences)
+        playback = PlaybackController(
+            api: api, audioCache: audioCache, artworkStore: artworkStore, defaults: preferences, audioPolicy: audioPolicy
+        )
         collectionCache = CollectionCacheCoordinator(
-            api: api, audioCache: audioCache, store: cacheStore, background: !inMemory, monitorNetwork: !inMemory
+            api: api, audioCache: audioCache, store: cacheStore, background: !inMemory,
+            monitorNetwork: !inMemory, audioPolicy: audioPolicy
         )
         nasDownloads = NASDownloadCoordinator(api: api, store: cacheStore)
         selectedSourceID = preferences.string(forKey: "lemon.selectedSource") ?? "kw"
+        audioPolicy.onChange = { [weak self] in self?.collectionCache.applyAudioPolicy() }
         playback.preferredTrack = { [weak self] track in
             guard let self else { return track }
             return await self.preferredLocalTrack(for: track)
