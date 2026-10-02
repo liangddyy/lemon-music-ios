@@ -253,6 +253,11 @@ open class AudioPlayer {
         let audioEntry = entryProvider.provideAudioEntry(url: url, headers: headers, cacheKey: cacheKey)
         play(audioEntry: audioEntry)
     }
+
+    public func play(url: URL, playbackID: String, cacheKey: String? = nil) {
+        let entry = entryProvider.provideAudioEntry(url: url, headers: [:], cacheKey: cacheKey, playbackID: playbackID)
+        play(audioEntry: entry)
+    }
     
     /// Starts the audio playback for the given URL
     ///
@@ -865,12 +870,13 @@ open class AudioPlayer {
                 let progressInFrames = entry.progressInFrames()
                 let progress = Double(progressInFrames) / outputAudioFormat.basicStreamDescription.mSampleRate
                 let duration = entry.duration()
+                let finishReason: AudioPlayerStopReason = .userAction
                 asyncOnMain { [weak self] in
                     guard let self else { return }
                     self.delegate?.audioPlayerDidFinishPlaying(
                         player: self,
                         entryId: entryId,
-                        stopReason: self.stopReason,
+                        stopReason: finishReason,
                         progress: progress,
                         duration: duration
                     )
@@ -915,6 +921,7 @@ open class AudioPlayer {
                 let progressInFrames = entry.progressInFrames()
                 let progress = Double(progressInFrames) / outputAudioFormat.basicStreamDescription.mSampleRate
                 let duration = entry.duration()
+                let finishReason = self.stopReason
 
                 sourceQueue.async { [weak self] in
                     guard let self else { return }
@@ -923,7 +930,7 @@ open class AudioPlayer {
                         self.delegate?.audioPlayerDidFinishPlaying(
                             player: self,
                             entryId: entryId,
-                            stopReason: self.stopReason,
+                            stopReason: finishReason,
                             progress: progress,
                             duration: duration
                         )

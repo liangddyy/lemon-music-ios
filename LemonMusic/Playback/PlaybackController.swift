@@ -29,6 +29,7 @@ final class PlaybackController {
     var repeatMode = false
     var isShuffled = false
     var showingFullPlayer = false
+    var preferredTrack: ((MusicTrack) async -> MusicTrack)?
 
     private nonisolated(unsafe) let player: AudioPlayer
     private let playerDelegate: LemonAudioPlayerDelegate
@@ -40,6 +41,8 @@ final class PlaybackController {
     private var currentPlaybackUsesCache = false
     private var currentPlaybackUsesPartialCache = false
     private var originalQueue: [MusicTrack]?
+    private var playbackRequest = PlaybackRequestState()
+    private var isLoadingTrack = false
 
     init(api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore) {
         self.api = api
@@ -149,21 +152,23 @@ final class PlaybackController {
     }
 
     func moveQueue(from offsets: IndexSet, to destination: Int) {
+        let queuedTrack = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil
         queue.move(fromOffsets: offsets, toOffset: destination)
-        if let track = currentTrack, let index = queue.firstIndex(of: track) { currentIndex = index }
+        if let track = queuedTrack, let index = queue.firstIndex(of: track) { currentIndex = index }
         persistQueue()
     }
 
     func toggleShuffle() {
-        guard !queue.isEmpty else { return }
-        if isShuffled, let originalQueue, let currentTrack {
+        guard queue.indices.contains(currentIndex) else { return }
+        let queuedTrack = queue[currentIndex]
+        if isShuffled, let originalQueue {
             queue = originalQueue
-            currentIndex = queue.firstIndex(of: currentTrack) ?? 0
+            currentIndex = queue.firstIndex(of: queuedTrack) ?? 0
             self.originalQueue = nil
-        } else if let currentTrack {
+        } else {
             originalQueue = queue
             let remaining = queue.enumerated().filter { $0.offset != currentIndex }.map(\.element).shuffled()
-            queue = [currentTrack] + remaining
+            queue = [queuedTrack] + remaining
             currentIndex = 0
         }
         isShuffled.toggle()
@@ -183,11 +188,13 @@ final class PlaybackController {
         updateNowPlaying()
     }
 
-    func handleNaturalEnd() async {
+    func handleNaturalEnd(playbackID: String) async {
+        guard playbackRequest.consumeEnd(for: playbackID) else { return }
         await next()
     }
 
     func handlePlaybackError() async {
+        guard !isLoadingTrack, playbackRequest.id != nil else { return }
         if (currentPlaybackUsesCache || currentPlaybackUsesPartialCache), let track = currentTrack {
             audioCache.remove(for: track.id)
             audioCacheStates[track.id] = .notCached
@@ -203,7 +210,12 @@ final class PlaybackController {
 
     private func loadCurrentTrack(autoplay: Bool, forceRefresh: Bool) async {
         guard queue.indices.contains(currentIndex) else { return }
-        let track = queue[currentIndex]
+        let requestID = playbackRequest.begin()
+        isLoadingTrack = true
+        defer { if playbackRequest.isCurrent(requestID) { isLoadingTrack = false } }
+        let requestedTrack = queue[currentIndex]
+        var track = await preferredTrack?(requestedTrack) ?? requestedTrack
+        guard playbackRequest.isCurrent(requestID) else { return }
         currentTrack = track
         retryingCurrentItem = forceRefresh
         currentPlaybackUsesCache = false
@@ -213,8 +225,7 @@ final class PlaybackController {
             if let cachedURL = audioCache.cachedURL(for: track.id) {
                 currentPlaybackUsesCache = true
                 audioCacheStates[track.id] = .cached
-                player.stop()
-                player.play(url: cachedURL)
+                player.play(url: cachedURL, playbackID: requestID)
             } else {
                 if let partial = audioCache.partialProgress(for: track.id), partial.total > 0 {
                     audioCacheStates[track.id] = .caching(min(1, Double(partial.downloaded) / Double(partial.total)))
@@ -222,9 +233,21 @@ final class PlaybackController {
                 } else {
                     audioCacheStates[track.id] = .caching(0)
                 }
-                let streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
-                player.stop()
-                player.play(url: streamURL, cacheKey: track.id)
+                let streamURL: URL
+                do {
+                    streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
+                } catch LemonAPIClient.APIError.server(let status, _) where
+                    [400, 404, 410].contains(status)
+                    && track.locator.kind == .local && requestedTrack.locator.kind == .online {
+                    guard playbackRequest.isCurrent(requestID) else { return }
+                    track = requestedTrack
+                    currentTrack = track
+                    currentPlaybackUsesPartialCache = false
+                    audioCacheStates[track.id] = .caching(0)
+                    streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
+                }
+                guard playbackRequest.isCurrent(requestID) else { return }
+                player.play(url: streamURL, playbackID: requestID, cacheKey: track.id)
             }
 
             lastError = nil
@@ -235,6 +258,7 @@ final class PlaybackController {
             updateNowPlaying()
             persistQueue()
         } catch {
+            guard playbackRequest.isCurrent(requestID) else { return }
             isPlaying = false
             audioCacheStates[track.id] = .failed
             lastError = error.localizedDescription
@@ -277,6 +301,7 @@ final class PlaybackController {
 
     private func updateNowPlaying() {
         guard let track = currentTrack else { return }
+        let requestID = playbackRequest.id
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
@@ -288,6 +313,7 @@ final class PlaybackController {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         Task { [weak self] in
             guard let self, let image = await self.artworkStore.image(for: track, api: self.api) else { return }
+            guard self.playbackRequest.id == requestID, self.currentTrack?.id == track.id else { return }
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
@@ -331,7 +357,7 @@ nonisolated final class LemonAudioPlayerDelegate: AudioPlayerDelegate, @unchecke
         duration: Double
     ) {
         guard stopReason == .eof else { return }
-        Task { @MainActor [weak controller] in await controller?.handleNaturalEnd() }
+        Task { @MainActor [weak controller] in await controller?.handleNaturalEnd(playbackID: entryId.id) }
     }
 
     func audioPlayerUnexpectedError(player: AudioPlayer, error: AudioPlayerError) {

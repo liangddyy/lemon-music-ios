@@ -9,6 +9,13 @@ struct DiscoverView: View {
         ScrollView {
             LazyVStack(spacing: 26) {
                 sourcePicker
+                if model.isRefreshingDiscover {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
+                if let error = model.discoverError {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 if !model.discoverAlbums.isEmpty {
                     VStack(spacing: 12) {
@@ -16,12 +23,19 @@ struct DiscoverView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 14) {
                                 ForEach(model.discoverAlbums) { album in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        AlbumArtwork(album: album, size: 145)
-                                        Text(album.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                        Text(album.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    NavigationLink {
+                                        OnlineCollectionView(collection: OnlineCollection(
+                                            kind: .album, source: album.sourceID, id: album.providerID, title: album.title
+                                        ))
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            AlbumArtwork(album: album, size: 145)
+                                            Text(album.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                            Text(album.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                        .frame(width: 145, alignment: .leading)
                                     }
-                                    .frame(width: 145, alignment: .leading)
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -34,17 +48,43 @@ struct DiscoverView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 ForEach(model.toplists) { list in
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Image(systemName: "chart.bar.fill")
-                                            .font(.title)
-                                            .foregroundStyle(.orange)
-                                        Text(list.name)
-                                            .font(.subheadline.weight(.semibold))
-                                            .lineLimit(2)
+                                    NavigationLink {
+                                        OnlineCollectionView(collection: OnlineCollection(
+                                            kind: .toplist, source: model.selectedSourceID, id: list.providerID, title: list.name
+                                        ))
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            PlaylistArtwork(playlist: list, size: 145)
+                                            Text(list.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                        }
+                                        .frame(width: 145, alignment: .leading)
                                     }
-                                    .padding(16)
-                                    .frame(width: 150, height: 110, alignment: .leading)
-                                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !model.discoverPlaylists.isEmpty {
+                    VStack(spacing: 12) {
+                        SectionTitle(title: "推荐歌单")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 14) {
+                                ForEach(model.discoverPlaylists) { playlist in
+                                    NavigationLink {
+                                        OnlineCollectionView(collection: OnlineCollection(
+                                            kind: .playlist, source: model.selectedSourceID,
+                                            id: playlist.providerID, title: playlist.name
+                                        ))
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            PlaylistArtwork(playlist: playlist, size: 145)
+                                            Text(playlist.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                        }
+                                        .frame(width: 145, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -56,7 +96,8 @@ struct DiscoverView: View {
                         SectionTitle(title: "新歌")
                         ForEach(model.discoverSongs.prefix(20)) { TrackRow(track: $0, queue: model.discoverSongs) }
                     }
-                } else if !model.isRefreshing {
+                } else if !model.isRefreshingDiscover, model.discoverAlbums.isEmpty,
+                          model.toplists.isEmpty, model.discoverPlaylists.isEmpty {
                     EmptyContentView(title: "暂无发现内容", systemImage: "sparkles", message: "请确认服务端已启用当前音源")
                         .frame(minHeight: 280)
                 }
@@ -64,7 +105,9 @@ struct DiscoverView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 100)
         }
+        .scrollBounceBehavior(.always)
         .navigationTitle("发现")
+        .task { await model.refreshDiscover() }
         .refreshable { await model.refreshDiscover(force: true) }
     }
 
@@ -82,4 +125,3 @@ struct DiscoverView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-

@@ -1,5 +1,6 @@
 // Derived from Cassette, licensed under MPL-2.0.
 
+import CryptoKit
 import Foundation
 import UIKit
 
@@ -12,10 +13,10 @@ final class ArtworkStore {
     private let maxMemoryEntries = 100
     private let maxDiskBytes: Int64 = 500 * 1_024 * 1_024
 
-    init() {
-        directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("lemon-music/artwork", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         garbageCollect()
     }
 
@@ -26,8 +27,19 @@ final class ArtworkStore {
     }
 
     func image(for album: MusicAlbum) async -> UIImage? {
-        guard let rawURL = album.artworkURL, let url = URL(string: rawURL) else { return nil }
-        return await image(key: "album:\(album.id)", targetSize: CGSize(width: 600, height: 600)) {
+        await image(key: "album:\(album.id)", remoteURL: album.artworkURL)
+    }
+
+    func image(key: String, remoteURL: String?) async -> UIImage? {
+        guard let rawURL = remoteURL, let url = URL(string: rawURL) else { return nil }
+        let digest = SHA256.hash(data: Data(rawURL.utf8)).map { String(format: "%02x", $0) }.joined()
+        return await image(key: "\(key).\(digest)", targetSize: CGSize(width: 600, height: 600)) {
+            if rawURL.hasPrefix("data:image/") {
+                let parts = rawURL.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2, parts[0].hasSuffix(";base64") else { return nil }
+                return Data(base64Encoded: String(parts[1]))
+            }
+            guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
             var request = URLRequest(url: url)
             request.timeoutInterval = 20
             request.cachePolicy = .reloadIgnoringLocalCacheData

@@ -19,17 +19,20 @@ final class AppModel {
     private(set) var discoverSongs: [MusicTrack] = []
     private(set) var discoverAlbums: [MusicAlbum] = []
     private(set) var toplists: [MusicPlaylist] = []
+    private(set) var discoverPlaylists: [MusicPlaylist] = []
     private(set) var onlineSearchResults: [MusicTrack] = []
     private(set) var onlineSearchAlbums: [MusicAlbum] = []
+    private(set) var onlineSearchPlaylists: [MusicPlaylist] = []
     private(set) var isRefreshing = false
     private(set) var isSearching = false
+    private(set) var discoverError: String?
     var errorMessage: String?
 
     var selectedSourceID: String {
         didSet { UserDefaults.standard.set(selectedSourceID, forKey: "lemon.selectedSource") }
     }
 
-    let api = LemonAPIClient()
+    let api: LemonAPIClient
     let cacheStore: CacheStore
     let audioCache: AudioCache
     let artworkStore = ArtworkStore()
@@ -40,12 +43,22 @@ final class AppModel {
     private let profileKey = "lemon.serverProfile"
     private let tokenKey = "session-token"
     private var saveUserDataTask: Task<Void, Never>?
+    private var discoverRequests: [String: UUID] = [:]
+    private var localMatchTasks: [String: Task<MusicTrack?, Never>] = [:]
+    private var searchRequestID: UUID?
 
-    init(inMemory: Bool = false) throws {
+    var isRefreshingDiscover: Bool { discoverRequests[selectedSourceID] != nil }
+
+    init(inMemory: Bool = false, api: LemonAPIClient = LemonAPIClient()) throws {
+        self.api = api
         cacheStore = try CacheStore(inMemory: inMemory)
         audioCache = AudioCache(container: cacheStore.container)
         playback = PlaybackController(api: api, audioCache: audioCache, artworkStore: artworkStore)
         selectedSourceID = UserDefaults.standard.string(forKey: "lemon.selectedSource") ?? "kw"
+        playback.preferredTrack = { [weak self] track in
+            guard let self else { return track }
+            return await self.preferredLocalTrack(for: track)
+        }
         webSocket.onEvent = { [weak self] type in self?.handleWebSocketEvent(type) }
         if ProcessInfo.processInfo.arguments.contains("-uiTestingReset") {
             keychain.delete(tokenKey)
@@ -159,59 +172,201 @@ final class AppModel {
 
     func refreshDiscover(force: Bool = false) async {
         guard !selectedSourceID.isEmpty else { return }
-        let cachePrefix = "discover.\(selectedSourceID)"
-        let cacheKeys = [".songs", ".albums", ".toplists"].map { cachePrefix + $0 }
-        if !force, cacheKeys.allSatisfy(cacheStore.isFresh) {
+        let source = selectedSourceID
+        guard discoverRequests[source] == nil else { return }
+        let cachePrefix = "discover.\(source)"
+        let cacheKeys = [".songs", ".albums", ".toplists", ".playlists"].map { cachePrefix + $0 }
+        func needsRefresh(_ suffix: String) -> Bool {
+            force || (!cacheStore.isFresh(cachePrefix + suffix) && !cacheStore.isFresh(cachePrefix + suffix + ".error"))
+        }
+        let fetchSongs = needsRefresh(".songs")
+        let fetchAlbums = needsRefresh(".albums")
+        let fetchLists = needsRefresh(".toplists")
+        let fetchPlaylists = needsRefresh(".playlists")
+        var failures: [String] = force ? [] : cacheKeys.compactMap {
+            cacheStore.value(String.self, for: $0 + ".error", allowExpired: false)
+        }
+        if !fetchSongs, !fetchAlbums, !fetchLists, !fetchPlaylists {
             loadDiscoverCache(prefix: cachePrefix)
+            discoverError = failures.isEmpty ? nil : failures.joined(separator: "\n")
             return
         }
-        do {
-            async let songs = api.newSongs(source: selectedSourceID)
-            async let albums = api.newAlbums(source: selectedSourceID)
-            async let lists = api.toplists(source: selectedSourceID)
-            let result = try await (songs, albums, lists)
-            discoverSongs = result.0
-            discoverAlbums = result.1
-            toplists = result.2
-            let discoverTTL: TimeInterval = 6 * 60 * 60
-            cacheStore.save(discoverSongs, for: cachePrefix + ".songs", ttl: discoverTTL)
-            cacheStore.save(discoverAlbums, for: cachePrefix + ".albums", ttl: discoverTTL)
-            cacheStore.save(toplists, for: cachePrefix + ".toplists", ttl: discoverTTL)
-        } catch {
+        let requestID = UUID()
+        discoverRequests[source] = requestID
+        discoverError = nil
+        defer { if discoverRequests[source] == requestID { discoverRequests[source] = nil } }
+        let songsTask = Task {
+            if fetchSongs { return try await api.newSongs(source: source) }
+            return cacheStore.value([MusicTrack].self, for: cachePrefix + ".songs") ?? []
+        }
+        let albumsTask = Task {
+            if fetchAlbums { return try await api.newAlbums(source: source) }
+            return cacheStore.value([MusicAlbum].self, for: cachePrefix + ".albums") ?? []
+        }
+        let listsTask = Task {
+            if fetchLists { return try await api.toplists(source: source) }
+            return cacheStore.value([MusicPlaylist].self, for: cachePrefix + ".toplists") ?? []
+        }
+        let playlistsTask = Task {
+            if fetchPlaylists { return try await api.recommendedPlaylists(source: source) }
+            return cacheStore.value([MusicPlaylist].self, for: cachePrefix + ".playlists") ?? []
+        }
+        let results = await (songsTask.result, albumsTask.result, listsTask.result, playlistsTask.result)
+        guard discoverRequests[source] == requestID else { return }
+        let ttl: TimeInterval = 6 * 60 * 60
+        func recordFailure(_ error: Error, label: String, suffix: String) {
+            let message = "\(label)：\(error.localizedDescription)"
+            failures.append(message)
+            cacheStore.save(message, for: cachePrefix + suffix + ".error", ttl: 10 * 60)
+        }
+        func clearFailure(_ suffix: String) {
+            cacheStore.save("", for: cachePrefix + suffix + ".error", ttl: -1)
+        }
+        switch results.0 {
+        case .success(let songs):
+            if fetchSongs {
+                cacheStore.save(songs, for: cachePrefix + ".songs", ttl: ttl)
+                clearFailure(".songs")
+            }
+        case .failure(let error): recordFailure(error, label: "新歌", suffix: ".songs")
+        }
+        switch results.1 {
+        case .success(let albums):
+            if fetchAlbums {
+                cacheStore.save(albums, for: cachePrefix + ".albums", ttl: ttl)
+                clearFailure(".albums")
+            }
+        case .failure(let error): recordFailure(error, label: "新碟", suffix: ".albums")
+        }
+        switch results.2 {
+        case .success(let lists):
+            if fetchLists {
+                cacheStore.save(lists, for: cachePrefix + ".toplists", ttl: ttl)
+                clearFailure(".toplists")
+            }
+        case .failure(let error): recordFailure(error, label: "排行榜", suffix: ".toplists")
+        }
+        switch results.3 {
+        case .success(let playlists):
+            if fetchPlaylists {
+                cacheStore.save(playlists, for: cachePrefix + ".playlists", ttl: ttl)
+                clearFailure(".playlists")
+            }
+        case .failure(let error): recordFailure(error, label: "歌单", suffix: ".playlists")
+        }
+        if selectedSourceID == source {
             loadDiscoverCache(prefix: cachePrefix)
-            errorMessage = error.localizedDescription
+            discoverError = failures.isEmpty ? nil : failures.joined(separator: "\n")
         }
     }
 
-    func selectSource(_ id: String) async {
-        selectedSourceID = id
-        loadDiscoverCache(prefix: "discover.\(id)")
-        await refreshDiscover(force: false)
+    func collectionTracks(_ collection: OnlineCollection, page: Int = 1, force: Bool = false) async throws -> TrackPage {
+        let key = "\(collection.cacheKey).page.\(page)"
+        if !force, let cached: TrackPage = cacheStore.value(TrackPage.self, for: key, allowExpired: false) {
+            return cached
+        }
+        let result = try await api.collectionTracks(collection, page: page)
+        cacheStore.save(result, for: key, ttl: 6 * 60 * 60)
+        return result
     }
 
-    func searchOnline(_ query: String) async {
+    func cachedCollectionPage(_ collection: OnlineCollection, page: Int = 1) -> TrackPage? {
+        cacheStore.value(TrackPage.self, for: "\(collection.cacheKey).page.\(page)")
+    }
+
+    private struct LocalMatchSnapshot: Codable { let track: MusicTrack? }
+
+    func preferredLocalTrack(for track: MusicTrack) async -> MusicTrack {
+        guard track.locator.kind == .online else { return track }
+        if let matched = LocalTrackMatcher.bestMatch(for: track, in: tracks) { return matched }
+        let key = "local-match.v1.\(track.id)"
+        if let snapshot: LocalMatchSnapshot = cacheStore.value(LocalMatchSnapshot.self, for: key, allowExpired: false) {
+            return snapshot.track ?? track
+        }
+        if let task = localMatchTasks[track.id] { return await task.value ?? track }
+        let task = Task<MusicTrack?, Never> { [weak self] in
+            guard let self else { return nil }
+            do {
+                for page in 1...3 {
+                    let candidates = try await self.api.tracks(page: page, limit: 200, query: track.title, sort: "title")
+                    guard !Task.isCancelled else { return nil }
+                    if let matched = LocalTrackMatcher.bestMatch(for: track, in: candidates) {
+                        self.cacheStore.save(LocalMatchSnapshot(track: matched), for: key, ttl: 10 * 60)
+                        return matched
+                    }
+                    if candidates.count < 200 { break }
+                }
+                guard !Task.isCancelled else { return nil }
+                self.cacheStore.save(LocalMatchSnapshot(track: nil), for: key, ttl: 10 * 60)
+            } catch {
+                // A failed library lookup must not prevent online playback.
+            }
+            return nil
+        }
+        localMatchTasks[track.id] = task
+        let matched = await task.value
+        localMatchTasks[track.id] = nil
+        return matched ?? track
+    }
+
+    func selectSource(_ id: String, refreshDiscovery: Bool = true) async {
+        selectedSourceID = id
+        loadDiscoverCache(prefix: "discover.\(id)")
+        if refreshDiscovery { await refreshDiscover(force: false) }
+    }
+
+    func searchOnline(_ query: String, kind: OnlineSearchKind = .songs) async {
+        let requestID = UUID()
+        searchRequestID = requestID
+        isSearching = false
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
             onlineSearchResults = []
             onlineSearchAlbums = []
+            onlineSearchPlaylists = []
             return
         }
-        let cacheKey = "search.\(selectedSourceID).\(value.lowercased())"
-        if let cached: [MusicTrack] = cacheStore.value([MusicTrack].self, for: cacheKey, allowExpired: false) {
-            onlineSearchResults = cached
+        let source = selectedSourceID
+        let cacheKey = "search.v2.\(kind.id.rawValue).\(source).\(value.lowercased())"
+        switch kind {
+        case .songs:
+            if let cached: [MusicTrack] = cacheStore.value([MusicTrack].self, for: cacheKey, allowExpired: false) {
+                onlineSearchResults = cached
+                return
+            }
+        case .albums:
+            if let cached: [MusicAlbum] = cacheStore.value([MusicAlbum].self, for: cacheKey, allowExpired: false) {
+                onlineSearchAlbums = cached
+                return
+            }
+        case .playlists:
+            if let cached: [MusicPlaylist] = cacheStore.value([MusicPlaylist].self, for: cacheKey, allowExpired: false) {
+                onlineSearchPlaylists = cached
+                return
+            }
         }
         isSearching = true
-        defer { isSearching = false }
+        defer { if searchRequestID == requestID { isSearching = false } }
         do {
-            async let tracks = api.searchTracks(keyword: value, source: selectedSourceID)
-            async let albums = api.searchAlbums(keyword: value, source: selectedSourceID)
-            let result = try await (tracks, albums)
-            onlineSearchResults = result.0
-            onlineSearchAlbums = result.1
-            cacheStore.save(result.0, for: cacheKey, ttl: 15 * 60)
-            cacheStore.save(result.1, for: cacheKey + ".albums", ttl: 15 * 60)
+            switch kind {
+            case .songs:
+                let result = try await api.searchTracks(keyword: value, source: source)
+                guard searchRequestID == requestID, !Task.isCancelled else { return }
+                onlineSearchResults = result
+                cacheStore.save(result, for: cacheKey, ttl: 15 * 60)
+            case .albums:
+                let result = try await api.searchAlbums(keyword: value, source: source)
+                guard searchRequestID == requestID, !Task.isCancelled else { return }
+                onlineSearchAlbums = result
+                cacheStore.save(result, for: cacheKey, ttl: 15 * 60)
+            case .playlists:
+                let result = try await api.searchPlaylists(keyword: value, source: source)
+                guard searchRequestID == requestID, !Task.isCancelled else { return }
+                onlineSearchPlaylists = result
+                cacheStore.save(result, for: cacheKey, ttl: 15 * 60)
+            }
         } catch {
-            errorMessage = error.localizedDescription
+            if searchRequestID == requestID, !Task.isCancelled { errorMessage = error.localizedDescription }
         }
     }
 
@@ -317,6 +472,7 @@ final class AppModel {
         discoverSongs = cacheStore.value([MusicTrack].self, for: prefix + ".songs") ?? []
         discoverAlbums = cacheStore.value([MusicAlbum].self, for: prefix + ".albums") ?? []
         toplists = cacheStore.value([MusicPlaylist].self, for: prefix + ".toplists") ?? []
+        discoverPlaylists = cacheStore.value([MusicPlaylist].self, for: prefix + ".playlists") ?? []
     }
 
     private func loadProfile() -> ServerProfile? {
@@ -330,6 +486,15 @@ final class AppModel {
     }
 
     private func clearAllCachedData() {
+        localMatchTasks.values.forEach { $0.cancel() }
+        localMatchTasks.removeAll()
+        searchRequestID = nil
+        isSearching = false
+        onlineSearchResults = []
+        onlineSearchAlbums = []
+        onlineSearchPlaylists = []
+        discoverRequests.removeAll()
+        discoverError = nil
         playback.cancelAutomaticCaching()
         tracks = []
         albums = []
@@ -340,6 +505,7 @@ final class AppModel {
         discoverSongs = []
         discoverAlbums = []
         toplists = []
+        discoverPlaylists = []
         cacheStore.clearAll()
         audioCache.clear()
         artworkStore.clear()

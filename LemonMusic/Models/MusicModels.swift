@@ -129,7 +129,8 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
         self.album = object.firstString("album", "albumName") ?? ""
         self.albumID = object.firstString("albumId", "albumID", "albumMid", "albummid")
         self.artistID = object.firstString("artistId", "artistID", "singerId")
-        self.duration = object.firstDouble("duration", "interval", "durationSeconds") ?? 0
+        self.duration = object.firstDouble("duration", "interval", "durationSeconds")
+            ?? Self.parseDuration(object.firstString("interval", "duration") ?? "")
         self.artworkURL = object.firstString("picUrl", "img", "cover", "coverUrl", "artworkURL")
         self.format = object.firstString("format", "suffix", "type")
         self.genre = object.firstString("genre")
@@ -163,6 +164,12 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
         for (key, value) in locator.identifiers { object[key] = .string(value) }
         return .object(object)
     }
+
+    private static func parseDuration(_ value: String) -> TimeInterval {
+        let parts = value.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 2 || parts.count == 3 else { return 0 }
+        return parts.reduce(0) { $0 * 60 + $1 }
+    }
 }
 
 nonisolated struct MusicAlbum: Identifiable, Codable, Sendable, Hashable {
@@ -172,6 +179,8 @@ nonisolated struct MusicAlbum: Identifiable, Codable, Sendable, Hashable {
     let artworkURL: String?
     let year: String?
     let trackCount: Int?
+    var providerID: String { String(id.split(separator: ":", maxSplits: 1).last ?? "") }
+    var sourceID: String { String(id.split(separator: ":", maxSplits: 1).first ?? "local") }
 
     init?(json: JSONValue, defaultSource: String? = nil) {
         guard let object = json.object,
@@ -219,12 +228,16 @@ nonisolated struct MusicPlaylist: Identifiable, Codable, Sendable, Hashable {
 
     init?(json: JSONValue, defaultSource: String? = nil) {
         guard let object = json.object else { return nil }
-        id = object.firstString("id", "playlistId") ?? UUID().uuidString
+        let rawID = object.firstString("id", "playlistId", "topId") ?? UUID().uuidString
+        id = defaultSource.map { "\($0):\(rawID)" } ?? rawID
         name = object.firstString("name", "title") ?? "未命名歌单"
-        artworkURL = object.firstString("coverUrl", "picUrl", "img")
+        artworkURL = object.firstString("coverUrl", "picUrl", "img", "cover", "coverImgUrl")
         createdAt = object.firstDouble("createdAt") ?? Date().timeIntervalSince1970
         if let snapshots = object["trackSnapshots"]?.object {
-            tracks = snapshots.values.compactMap { MusicTrack(json: $0, defaultSource: defaultSource) }
+            let orderedKeys = object["trackKeys"]?.array?.compactMap(\.string) ?? snapshots.keys.sorted()
+            tracks = orderedKeys.compactMap { key in
+                snapshots[key].flatMap { MusicTrack(json: $0, defaultSource: defaultSource) }
+            }
         } else {
             tracks = object.firstArray("tracks", "list", "songs").compactMap { MusicTrack(json: $0, defaultSource: defaultSource) }
         }
@@ -242,6 +255,8 @@ nonisolated struct MusicPlaylist: Identifiable, Codable, Sendable, Hashable {
             "playlistType": .string("custom"),
         ])
     }
+
+    var providerID: String { String(id.split(separator: ":", maxSplits: 1).last ?? "") }
 }
 
 nonisolated struct MusicSource: Identifiable, Codable, Sendable, Hashable {

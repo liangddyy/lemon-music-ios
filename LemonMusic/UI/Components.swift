@@ -9,46 +9,51 @@ struct TrackRow: View {
     var queue: [MusicTrack]? = nil
 
     var body: some View {
-        Button {
-            Task { await model.play(track, in: queue) }
-        } label: {
-            HStack(spacing: 12) {
-                TrackArtwork(track: track, size: 48)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(track.title)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                if model.favoriteIDs.contains(track.id) {
-                    Image(systemName: "heart.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                Menu {
-                    Button(model.favoriteIDs.contains(track.id) ? "取消收藏" : "收藏", systemImage: "heart") {
-                        model.toggleFavorite(track)
+        HStack(spacing: 12) {
+            Button {
+                Task { await model.play(track, in: queue) }
+            } label: {
+                HStack(spacing: 12) {
+                    TrackArtwork(track: track, size: 48)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title)
+                            .font(.body.weight(.medium))
+                            .lineLimit(1)
+                        Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    Button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                        model.playback.playNext(track)
+                    Spacer(minLength: 8)
+                    if model.favoriteIDs.contains(track.id) {
+                        Image(systemName: "heart.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
-                    Menu("添加到歌单", systemImage: "text.badge.plus") {
-                        ForEach(model.userData.playlists) { playlist in
-                            Button(playlist.name) { model.add(track, to: playlist.id) }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 36, height: 36)
                 }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("track.play.\(track.id)")
+            Menu {
+                Button(model.favoriteIDs.contains(track.id) ? "取消收藏" : "收藏", systemImage: "heart") {
+                    model.toggleFavorite(track)
+                }
+                Button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                    model.playback.playNext(track)
+                }
+                Menu("添加到歌单", systemImage: "text.badge.plus") {
+                    ForEach(model.userData.playlists) { playlist in
+                        Button(playlist.name) { model.add(track, to: playlist.id) }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("歌曲菜单")
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -99,6 +104,37 @@ struct AlbumArtwork: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .task(id: album.id) { image = await model.artworkStore.image(for: album) }
+    }
+}
+
+struct PlaylistArtwork: View {
+    @Environment(AppModel.self) private var model
+    let playlist: MusicPlaylist
+    let size: CGFloat
+    @State private var image: UIImage?
+    @State private var remoteLoaded = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else if (playlist.artworkURL == nil || remoteLoaded), let track = playlist.tracks.first {
+                TrackArtwork(track: track, size: size)
+            } else {
+                ZStack {
+                    Color.orange.opacity(0.14)
+                    Image(systemName: "music.note.list")
+                        .font(.title)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .task(id: playlist.artworkURL) {
+            image = await model.artworkStore.image(key: "playlist:\(playlist.id)", remoteURL: playlist.artworkURL)
+            remoteLoaded = true
+        }
     }
 }
 

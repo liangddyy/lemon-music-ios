@@ -68,6 +68,129 @@ struct LemonAPIClientTests {
         let value = try await client.lyrics(for: track)
         #expect(value == "[1000,500](0,500,0)Word")
     }
+
+    @Test func collectionDetailsUseProviderIDAndPagination() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let client = LemonAPIClient(session: URLSession(configuration: configuration))
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/discover/toplist")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            #expect(query.contains(URLQueryItem(name: "id", value: "3778678")))
+            #expect(query.contains(URLQueryItem(name: "source", value: "wy")))
+            #expect(query.contains(URLQueryItem(name: "page", value: "2")))
+            let body = #"{"ok":true,"data":{"list":[{"id":"1","name":"Song","singer":"Artist"}],"total":150}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let collection = OnlineCollection(kind: .toplist, source: "wy", id: "3778678", title: "榜单")
+        let result = try await client.collectionTracks(collection, page: 2)
+        #expect(result.total == 150)
+        #expect(result.tracks.first?.id == "online:wy:1")
+    }
+
+    @MainActor @Test func discoverRefreshUpdatesSuccessfulSectionsAndBypassesFreshCache() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let client = LemonAPIClient(session: URLSession(configuration: configuration))
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            let path = request.url!.path
+            let count = log.record(path)
+            let code: Int
+            let body: String
+            if path.hasSuffix("/new-songs") {
+                code = 200
+                body = #"{"data":{"list":[{"songId":"song-"# + String(count) + #"","name":"Song","singer":"Artist"}]}}"#
+            } else if path.hasSuffix("/new-albums") {
+                code = 200
+                body = #"{"data":{"list":[{"id":"album","name":"Album"}]}}"#
+            } else {
+                code = 500
+                body = #"{"error":"排行榜暂不可用"}"#
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        model.selectedSourceID = "wy"
+        await model.refreshDiscover(force: true)
+        #expect(model.discoverSongs.first?.id == "online:wy:song-1")
+        #expect(model.discoverAlbums.count == 1)
+        #expect(model.discoverError?.contains("排行榜") == true)
+        #expect(!model.isRefreshingDiscover)
+        await model.refreshDiscover(force: true)
+        #expect(model.discoverSongs.first?.id == "online:wy:song-2")
+        #expect(model.discoverAlbums.count == 1)
+        await model.refreshDiscover()
+        #expect(log.count("/api/v1/discover/new-songs") == 2)
+        #expect(log.count("/api/v1/discover/toplists") == 2)
+    }
+
+    @MainActor @Test func onlinePlaybackSearchesServerLibraryAndCachesMatch() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let client = LemonAPIClient(session: URLSession(configuration: configuration))
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/library/tracks")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            #expect(query.contains(URLQueryItem(name: "q", value: "夜曲")))
+            _ = log.record(request.url!.path)
+            let body = #"{"data":[{"filePath":"/music/song.mp3","title":"夜曲","artist":"周杰伦","duration":200}]}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        let online = try #require(MusicTrack(json: .object([
+            "songId": .string("1"), "source": .string("wy"),
+            "title": .string("夜曲"), "artist": .string("周杰伦"), "duration": .number(200),
+        ])))
+        let first = await model.preferredLocalTrack(for: online)
+        let repeated = await model.preferredLocalTrack(for: online)
+        #expect(first.locator.kind == .local)
+        #expect(first.locator.filePath == "/music/song.mp3")
+        #expect(repeated.id == first.id)
+        #expect(log.count("/api/v1/library/tracks") == 1)
+    }
+
+    @MainActor @Test func playlistSearchOnlyRequestsSelectedKindAndReusesFreshCache() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let client = LemonAPIClient(session: URLSession(configuration: configuration))
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/search/playlist")
+            _ = log.record(request.url!.path)
+            let body = #"{"data":{"list":[{"id":"p1","name":"歌单","img":"https://example.com/cover.jpg"}]}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        model.selectedSourceID = "wy"
+        await model.searchOnline("Song", kind: .playlists)
+        await model.searchOnline("Song", kind: .playlists)
+        #expect(model.onlineSearchPlaylists.first?.providerID == "p1")
+        #expect(log.count("/api/v1/search/playlist") == 1)
+    }
+}
+
+private nonisolated final class RequestLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    func record(_ path: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        counts[path, default: 0] += 1
+        return counts[path, default: 0]
+    }
+
+    func count(_ path: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts[path, default: 0]
+    }
 }
 
 private final class URLProtocolStub: URLProtocol, @unchecked Sendable {

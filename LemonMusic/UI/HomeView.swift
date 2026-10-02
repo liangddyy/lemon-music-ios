@@ -141,11 +141,7 @@ struct HomeView: View {
                                 PlaylistDetailView(playlist: playlist)
                             } label: {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.14))
-                                        Image(systemName: "music.note.list").font(.largeTitle).foregroundStyle(.orange)
-                                    }
-                                    .frame(width: 140, height: 140)
+                                    PlaylistArtwork(playlist: playlist, size: 140)
                                     Text(playlist.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                                     Text("\(playlist.tracks.count) 首").font(.caption).foregroundStyle(.secondary)
                                 }
@@ -163,20 +159,23 @@ struct HomeView: View {
 struct PlaylistDetailView: View {
     @Environment(AppModel.self) private var model
     let playlist: MusicPlaylist
+    private var currentPlaylist: MusicPlaylist {
+        model.userData.playlists.first(where: { $0.id == playlist.id }) ?? playlist
+    }
 
     var body: some View {
         List {
-            if playlist.tracks.isEmpty {
+            if currentPlaylist.tracks.isEmpty {
                 EmptyContentView(title: "歌单为空", systemImage: "music.note.list", message: "从歌曲菜单中添加音乐")
             } else {
-                ForEach(playlist.tracks) { TrackRow(track: $0, queue: playlist.tracks) }
+                ForEach(currentPlaylist.tracks) { TrackRow(track: $0, queue: currentPlaylist.tracks) }
             }
         }
         .listStyle(.plain)
-        .navigationTitle(playlist.name)
+        .navigationTitle(currentPlaylist.name)
         .toolbar {
-            if let first = playlist.tracks.first {
-                Button("播放", systemImage: "play.fill") { Task { await model.play(first, in: playlist.tracks) } }
+            if let first = currentPlaylist.tracks.first {
+                Button("播放", systemImage: "play.fill") { Task { await model.play(first, in: currentPlaylist.tracks) } }
             }
         }
     }

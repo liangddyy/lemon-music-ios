@@ -9,6 +9,7 @@ protocol AudioEntryProviding {
     func provideAudioEntry(url: URL, httpMethod: String?, httpBody: Data?, headers: [String: String]) -> AudioEntry
     func provideAudioEntry(url: URL, headers: [String: String]) -> AudioEntry
     func provideAudioEntry(url: URL, headers: [String: String], cacheKey: String) -> AudioEntry
+    func provideAudioEntry(url: URL, headers: [String: String], cacheKey: String?, playbackID: String) -> AudioEntry
     func provideAudioEntry(url: URL) -> AudioEntry
 }
 
@@ -41,6 +42,11 @@ final class AudioEntryProvider: AudioEntryProviding {
         return AudioEntry(source: source,
                           entryId: AudioEntryId(id: url.absoluteString),
                           outputAudioFormat: outputAudioFormat)
+    }
+
+    func provideAudioEntry(url: URL, headers: [String: String], cacheKey: String?, playbackID: String) -> AudioEntry {
+        let source = self.source(for: url, httpMethod: nil, httpBody: nil, headers: headers, cacheKey: cacheKey)
+        return AudioEntry(source: source, entryId: AudioEntryId(id: playbackID), outputAudioFormat: outputAudioFormat)
     }
     
     func provideAudioEntry(url: URL, httpMethod: String?, httpBody: Data?, headers: [String: String]) -> AudioEntry {

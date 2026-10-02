@@ -157,6 +157,16 @@ actor LemonAPIClient {
         return extractArray(root).compactMap { MusicAlbum(json: $0, defaultSource: source) }
     }
 
+    func searchPlaylists(keyword: String, source: String, page: Int = 1) async throws -> [MusicPlaylist] {
+        let root = try await request("/search/playlist", query: [
+            URLQueryItem(name: "keyword", value: keyword),
+            URLQueryItem(name: "source", value: source),
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "limit", value: "30"),
+        ], timeout: 30)
+        return extractArray(root).compactMap { MusicPlaylist(json: $0, defaultSource: source) }
+    }
+
     func newSongs(source: String, region: String = "") async throws -> [MusicTrack] {
         let root = try await request("/discover/new-songs", query: [
             URLQueryItem(name: "source", value: source),
@@ -180,6 +190,39 @@ actor LemonAPIClient {
     func toplists(source: String) async throws -> [MusicPlaylist] {
         let root = try await request("/discover/toplists", query: [URLQueryItem(name: "source", value: source)], timeout: 55)
         return extractArray(root).compactMap { MusicPlaylist(json: $0, defaultSource: source) }
+    }
+
+    func recommendedPlaylists(source: String) async throws -> [MusicPlaylist] {
+        let root = try await request("/playlist/recommend", query: [
+            URLQueryItem(name: "source", value: source),
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "limit", value: "20"),
+        ], timeout: 30)
+        return extractArray(root).compactMap { MusicPlaylist(json: $0, defaultSource: source) }
+    }
+
+    func collectionTracks(_ collection: OnlineCollection, page: Int = 1) async throws -> TrackPage {
+        let path: String
+        var query = [
+            URLQueryItem(name: "source", value: collection.source),
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "limit", value: "100"),
+        ]
+        switch collection.kind {
+        case .toplist:
+            path = "/discover/toplist"
+            query.append(URLQueryItem(name: "id", value: collection.id))
+        case .album:
+            path = "/search/album/detail"
+            query.append(URLQueryItem(name: "id", value: collection.id))
+        case .playlist:
+            path = "/playlist"
+            query.append(URLQueryItem(name: "url", value: collection.id))
+        }
+        let root = try await request(path, query: query, timeout: collection.kind == .playlist ? 125 : 55)
+        let data = root["data"] ?? root
+        let tracks = extractArray(root).compactMap { MusicTrack(json: $0, defaultSource: collection.source) }
+        return TrackPage(tracks: tracks, total: data["trackTotal"]?.int ?? data["total"]?.int ?? tracks.count)
     }
 
     func userData() async throws -> LibraryUserData {
