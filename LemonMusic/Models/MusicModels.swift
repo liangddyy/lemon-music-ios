@@ -100,6 +100,7 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
     let genre: String?
     let modifiedAt: TimeInterval?
     let locator: PlaybackLocator
+    let downloadMetadata: [String: JSONValue]?
 
     static func == (lhs: MusicTrack, rhs: MusicTrack) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -119,7 +120,7 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
             : "online:\(source ?? "unknown"):\(songID ?? rawID)"
 
         var identifiers: [String: String] = [:]
-        for key in ["songId", "songmid", "hash", "copyrightId", "albumAudioId", "albumId", "albumMid", "albummid"] {
+        for key in ["songId", "songmid", "hash", "copyrightId", "albumAudioId", "albumId", "albumMid", "albummid", "musicId", "rid", "dcTargetId", "strMediaMid"] {
             if let value = object[key]?.string, !value.isEmpty { identifiers[key] = value }
         }
 
@@ -135,6 +136,9 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
         self.format = object.firstString("format", "suffix", "type")
         self.genre = object.firstString("genre")
         self.modifiedAt = object.firstDouble("mtime", "modifiedAt", "savedAt")
+        self.downloadMetadata = object.filter {
+            ["types", "qualitys", "albumArtist", "year", "publishTime", "interval"].contains($0.key)
+        }
         self.locator = PlaybackLocator(
             kind: kind,
             trackID: trackID,
@@ -154,8 +158,10 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
             "source": .string(locator.source ?? (locator.kind == .local ? "local" : "")),
             "duration": .number(duration),
         ]
+        object.merge(downloadMetadata ?? [:]) { current, _ in current }
         if let filePath = locator.filePath { object["filePath"] = .string(filePath); object["localPath"] = .string(filePath) }
         if let trackID = locator.trackID { object["trackId"] = .string(trackID) }
+        if let songID = locator.songID { object["songId"] = .string(songID) }
         if let artworkURL { object["picUrl"] = .string(artworkURL) }
         if let format { object["format"] = .string(format) }
         if let genre { object["genre"] = .string(genre) }
@@ -217,6 +223,28 @@ nonisolated struct MusicPlaylist: Identifiable, Codable, Sendable, Hashable {
     var tracks: [MusicTrack]
     var artworkURL: String?
     var createdAt: TimeInterval
+    var preservedFields: [String: JSONValue] = [:]
+
+    var isImported: Bool { preservedFields["playlistType"]?.string == "imported" || importURL != nil }
+    var importSource: String? { preservedFields.firstString("importSource") }
+    var importURL: String? { preservedFields.firstString("importUrl") }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.json == rhs.json }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, tracks, artworkURL, createdAt, preservedFields
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        tracks = try values.decodeIfPresent([MusicTrack].self, forKey: .tracks) ?? []
+        artworkURL = try values.decodeIfPresent(String.self, forKey: .artworkURL)
+        createdAt = try values.decodeIfPresent(TimeInterval.self, forKey: .createdAt) ?? 0
+        preservedFields = try values.decodeIfPresent([String: JSONValue].self, forKey: .preservedFields) ?? [:]
+    }
 
     init(id: String = UUID().uuidString, name: String, tracks: [MusicTrack] = [], artworkURL: String? = nil, createdAt: TimeInterval = Date().timeIntervalSince1970) {
         self.id = id
@@ -233,6 +261,7 @@ nonisolated struct MusicPlaylist: Identifiable, Codable, Sendable, Hashable {
         name = object.firstString("name", "title") ?? "未命名歌单"
         artworkURL = object.firstString("coverUrl", "picUrl", "img", "cover", "coverImgUrl")
         createdAt = object.firstDouble("createdAt") ?? Date().timeIntervalSince1970
+        preservedFields = object
         if let snapshots = object["trackSnapshots"]?.object {
             let orderedKeys = object["trackKeys"]?.array?.compactMap(\.string) ?? snapshots.keys.sorted()
             tracks = orderedKeys.compactMap { key in
@@ -244,16 +273,18 @@ nonisolated struct MusicPlaylist: Identifiable, Codable, Sendable, Hashable {
     }
 
     var json: JSONValue {
-        let snapshots = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0.snapshotJSON) })
-        return .object([
+        let snapshots = Dictionary(tracks.map { ($0.id, $0.snapshotJSON) }, uniquingKeysWith: { first, _ in first })
+        var object = preservedFields
+        object.merge([
             "id": .string(id),
             "name": .string(name),
             "trackKeys": .array(tracks.map { .string($0.id) }),
             "trackSnapshots": .object(snapshots),
             "coverUrl": artworkURL.map(JSONValue.string) ?? .string(""),
             "createdAt": .number(createdAt),
-            "playlistType": .string("custom"),
-        ])
+            "playlistType": .string(isImported ? "imported" : "custom"),
+        ]) { _, new in new }
+        return .object(object)
     }
 
     var providerID: String { String(id.split(separator: ":", maxSplits: 1).last ?? "") }

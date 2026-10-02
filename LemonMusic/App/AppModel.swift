@@ -17,7 +17,6 @@ final class AppModel {
     private(set) var sources: [MusicSource] = []
     private(set) var userData: LibraryUserData = .empty
     private(set) var discoverSongs: [MusicTrack] = []
-    private(set) var discoverAlbums: [MusicAlbum] = []
     private(set) var toplists: [MusicPlaylist] = []
     private(set) var discoverPlaylists: [MusicPlaylist] = []
     private(set) var onlineSearchResults: [MusicTrack] = []
@@ -27,9 +26,11 @@ final class AppModel {
     private(set) var isSearching = false
     private(set) var discoverError: String?
     var errorMessage: String?
+    private(set) var userDataSyncError: String?
+    private var pendingUserDataSync = false
 
     var selectedSourceID: String {
-        didSet { UserDefaults.standard.set(selectedSourceID, forKey: "lemon.selectedSource") }
+        didSet { preferences.set(selectedSourceID, forKey: "lemon.selectedSource") }
     }
 
     let api: LemonAPIClient
@@ -37,11 +38,14 @@ final class AppModel {
     let audioCache: AudioCache
     let artworkStore = ArtworkStore()
     let playback: PlaybackController
+    let collectionCache: CollectionCacheCoordinator
+    let nasDownloads: NASDownloadCoordinator
     let webSocket = LemonWebSocket()
 
     private let keychain = KeychainStore()
     private let profileKey = "lemon.serverProfile"
     private let tokenKey = "session-token"
+    private let preferences: UserDefaults
     private var saveUserDataTask: Task<Void, Never>?
     private var discoverRequests: [String: UUID] = [:]
     private var localMatchTasks: [String: Task<MusicTrack?, Never>] = [:]
@@ -51,14 +55,26 @@ final class AppModel {
 
     init(inMemory: Bool = false, api: LemonAPIClient = LemonAPIClient()) throws {
         self.api = api
+        preferences = inMemory ? UserDefaults(suiteName: "lemon.tests.\(UUID())")! : .standard
         cacheStore = try CacheStore(inMemory: inMemory)
-        audioCache = AudioCache(container: cacheStore.container)
-        playback = PlaybackController(api: api, audioCache: audioCache, artworkStore: artworkStore)
-        selectedSourceID = UserDefaults.standard.string(forKey: "lemon.selectedSource") ?? "kw"
+        audioCache = AudioCache(
+            container: cacheStore.container,
+            root: inMemory ? FileManager.default.temporaryDirectory.appendingPathComponent("lemon-tests-\(UUID())") : nil
+        )
+        playback = PlaybackController(api: api, audioCache: audioCache, artworkStore: artworkStore, defaults: preferences)
+        collectionCache = CollectionCacheCoordinator(
+            api: api, audioCache: audioCache, store: cacheStore, background: !inMemory, monitorNetwork: !inMemory
+        )
+        nasDownloads = NASDownloadCoordinator(api: api, store: cacheStore)
+        selectedSourceID = preferences.string(forKey: "lemon.selectedSource") ?? "kw"
         playback.preferredTrack = { [weak self] track in
             guard let self else { return track }
             return await self.preferredLocalTrack(for: track)
         }
+        collectionCache.preferredTrack = { [weak self] track in await self?.preferredLocalTrack(for: track) ?? track }
+        nasDownloads.preferredTrack = { [weak self] track in await self?.preferredLocalTrack(for: track) ?? track }
+        playback.willPlayTrack = { [weak self] track in await self?.collectionCache.givePlaybackPriority(to: track) }
+        playback.onTrackChanged = { [weak self] in self?.collectionCache.pump() }
         webSocket.onEvent = { [weak self] type in self?.handleWebSocketEvent(type) }
         if ProcessInfo.processInfo.arguments.contains("-uiTestingReset") {
             keychain.delete(tokenKey)
@@ -66,6 +82,8 @@ final class AppModel {
             cacheStore.clearAll()
             audioCache.clear()
             artworkStore.clear()
+        } else if !inMemory, let saved = loadProfile() {
+            collectionCache.configure(account: accountKey(saved), activate: false)
         }
     }
 
@@ -76,6 +94,12 @@ final class AppModel {
     }
 
     func bootstrap() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
+            await loadUITestFixtures()
+            return
+        }
+        #endif
         loadCachedData()
         guard let profile = loadProfile(), let token = keychain.get(tokenKey) else {
             sessionState = .signedOut
@@ -84,15 +108,19 @@ final class AppModel {
         self.profile = profile
         do {
             try await api.configure(baseURL: profile.baseURL, token: token, apiPrefix: profile.apiPrefix)
+            configureDownloads()
             sessionState = tracks.isEmpty ? .loading : .ready
             let user = try await api.currentUser()
             self.profile?.user = user
             self.profile?.apiPrefix = await api.selectedAPIPrefix()
             saveProfile()
+            configureDownloads()
             sessionState = .ready
             connectWebSocket()
             await refreshAll(force: false)
         } catch LemonAPIClient.APIError.unauthorized {
+            collectionCache.reset()
+            nasDownloads.reset()
             keychain.delete(tokenKey)
             sessionState = .signedOut
         } catch {
@@ -102,23 +130,37 @@ final class AppModel {
     }
 
     func login(baseURL: String, username: String, password: String) async throws {
+        let previousProfile = profile ?? loadProfile()
+        saveUserDataTask?.cancel()
         let normalized = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         try await api.configure(baseURL: normalized, token: nil)
         let session = try await api.login(username: username, password: password)
         try keychain.set(session.token, for: tokenKey)
-        profile = ServerProfile(
+        let nextProfile = ServerProfile(
             baseURL: normalized,
             username: username,
             user: session.user,
             apiPrefix: await api.selectedAPIPrefix()
         )
+        if previousProfile.map({ accountKey($0) != accountKey(nextProfile) }) ?? true {
+            collectionCache.reset()
+            nasDownloads.reset()
+            playback.stop()
+            clearAllCachedData()
+        }
+        profile = nextProfile
         saveProfile()
         sessionState = .ready
+        configureDownloads()
         connectWebSocket()
         await refreshAll(force: true)
     }
 
     func logout() async {
+        collectionCache.reset()
+        nasDownloads.reset()
+        saveUserDataTask?.cancel()
+        playback.stop()
         await api.logout()
         webSocket.stop()
         keychain.delete(tokenKey)
@@ -133,6 +175,9 @@ final class AppModel {
     }
 
     func refreshAll(force: Bool = true) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") { return }
+        #endif
         guard sessionState != .signedOut else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -149,7 +194,7 @@ final class AppModel {
             artists = values.2
             genres = values.3
             sources = values.4
-            userData = values.5
+            if !pendingUserDataSync { userData = values.5 }
             if !sources.contains(where: { $0.id == selectedSourceID }), let first = sources.first {
                 selectedSourceID = first.id
             }
@@ -162,6 +207,8 @@ final class AppModel {
             sessionState = .ready
             await refreshDiscover(force: false)
         } catch LemonAPIClient.APIError.unauthorized {
+            collectionCache.reset()
+            nasDownloads.reset()
             keychain.delete(tokenKey)
             sessionState = .signedOut
         } catch {
@@ -171,22 +218,24 @@ final class AppModel {
     }
 
     func refreshDiscover(force: Bool = false) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") { return }
+        #endif
         guard !selectedSourceID.isEmpty else { return }
         let source = selectedSourceID
         guard discoverRequests[source] == nil else { return }
         let cachePrefix = "discover.\(source)"
-        let cacheKeys = [".songs", ".albums", ".toplists", ".playlists"].map { cachePrefix + $0 }
+        let cacheKeys = [".songs", ".toplists", ".playlists"].map { cachePrefix + $0 }
         func needsRefresh(_ suffix: String) -> Bool {
             force || (!cacheStore.isFresh(cachePrefix + suffix) && !cacheStore.isFresh(cachePrefix + suffix + ".error"))
         }
         let fetchSongs = needsRefresh(".songs")
-        let fetchAlbums = needsRefresh(".albums")
         let fetchLists = needsRefresh(".toplists")
         let fetchPlaylists = needsRefresh(".playlists")
         var failures: [String] = force ? [] : cacheKeys.compactMap {
             cacheStore.value(String.self, for: $0 + ".error", allowExpired: false)
         }
-        if !fetchSongs, !fetchAlbums, !fetchLists, !fetchPlaylists {
+        if !fetchSongs, !fetchLists, !fetchPlaylists {
             loadDiscoverCache(prefix: cachePrefix)
             discoverError = failures.isEmpty ? nil : failures.joined(separator: "\n")
             return
@@ -199,10 +248,6 @@ final class AppModel {
             if fetchSongs { return try await api.newSongs(source: source) }
             return cacheStore.value([MusicTrack].self, for: cachePrefix + ".songs") ?? []
         }
-        let albumsTask = Task {
-            if fetchAlbums { return try await api.newAlbums(source: source) }
-            return cacheStore.value([MusicAlbum].self, for: cachePrefix + ".albums") ?? []
-        }
         let listsTask = Task {
             if fetchLists { return try await api.toplists(source: source) }
             return cacheStore.value([MusicPlaylist].self, for: cachePrefix + ".toplists") ?? []
@@ -211,7 +256,7 @@ final class AppModel {
             if fetchPlaylists { return try await api.recommendedPlaylists(source: source) }
             return cacheStore.value([MusicPlaylist].self, for: cachePrefix + ".playlists") ?? []
         }
-        let results = await (songsTask.result, albumsTask.result, listsTask.result, playlistsTask.result)
+        let results = await (songsTask.result, listsTask.result, playlistsTask.result)
         guard discoverRequests[source] == requestID else { return }
         let ttl: TimeInterval = 6 * 60 * 60
         func recordFailure(_ error: Error, label: String, suffix: String) {
@@ -231,14 +276,6 @@ final class AppModel {
         case .failure(let error): recordFailure(error, label: "新歌", suffix: ".songs")
         }
         switch results.1 {
-        case .success(let albums):
-            if fetchAlbums {
-                cacheStore.save(albums, for: cachePrefix + ".albums", ttl: ttl)
-                clearFailure(".albums")
-            }
-        case .failure(let error): recordFailure(error, label: "新碟", suffix: ".albums")
-        }
-        switch results.2 {
         case .success(let lists):
             if fetchLists {
                 cacheStore.save(lists, for: cachePrefix + ".toplists", ttl: ttl)
@@ -246,7 +283,7 @@ final class AppModel {
             }
         case .failure(let error): recordFailure(error, label: "排行榜", suffix: ".toplists")
         }
-        switch results.3 {
+        switch results.2 {
         case .success(let playlists):
             if fetchPlaylists {
                 cacheStore.save(playlists, for: cachePrefix + ".playlists", ttl: ttl)
@@ -272,6 +309,88 @@ final class AppModel {
 
     func cachedCollectionPage(_ collection: OnlineCollection, page: Int = 1) -> TrackPage? {
         cacheStore.value(TrackPage.self, for: "\(collection.cacheKey).page.\(page)")
+    }
+
+    func collectionPage(_ source: CollectionSource, page: Int, force: Bool = false) async throws -> TrackPage {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
+            return TrackPage(tracks: tracks, total: tracks.count)
+        }
+        #endif
+        switch source {
+        case .playlist(let playlist):
+            let current = userData.playlists.first { $0.id == playlist.id } ?? playlist
+            return TrackPage(tracks: current.tracks, total: current.tracks.count)
+        case .online(let collection):
+            return try await collectionTracks(collection, page: page, force: force)
+        case .local(let collection):
+            let key = "\(collection.cacheKey).page.\(page)"
+            if !force, let cached = cacheStore.value(TrackPage.self, for: key, allowExpired: false) { return cached }
+            let result = try await api.localCollectionTracks(collection, page: page)
+            cacheStore.save(result, for: key, ttl: 10 * 60)
+            return result
+        }
+    }
+
+    func completeCollection(_ source: CollectionSource, force: Bool = false) async throws -> [MusicTrack] {
+        var result = CollectionAccumulator()
+        var page = 1
+        repeat {
+            try Task.checkCancellation()
+            try result.append(await collectionPage(source, page: page, force: force))
+            if case .online(let online) = source, online.kind == .playlist, !result.isComplete {
+                throw CollectionError.incomplete
+            }
+            page += 1
+        } while !result.isComplete
+        cacheStore.save(TrackPage(tracks: result.tracks, total: result.total), for: "\(source.key).complete", ttl: 6 * 60 * 60)
+        return result.tracks
+    }
+
+    func cachedCompleteCollection(_ source: CollectionSource) -> TrackPage? {
+        cacheStore.value(TrackPage.self, for: "\(source.key).complete")
+    }
+
+    func isCollectionFavorite(_ source: CollectionSource) -> Bool {
+        guard let identity = source.favoriteIdentity else { return false }
+        return userData.playlists.contains {
+            $0.isImported && $0.importSource == identity.source
+                && $0.importURL.map(PlaylistIdentity.canonicalID) == PlaylistIdentity.canonicalID(identity.id)
+        }
+    }
+
+    func favoriteCollection(_ source: CollectionSource, tracks: [MusicTrack]) {
+        guard let identity = source.favoriteIdentity, !isCollectionFavorite(source) else { return }
+        var playlist = MusicPlaylist(name: source.title, tracks: tracks, artworkURL: source.artworkURL)
+        playlist.preservedFields = [
+            "playlistType": .string("imported"), "importSource": .string(identity.source),
+            "importUrl": .string(identity.id), "lastSyncedAt": .number(Date().timeIntervalSince1970 * 1_000),
+            "lastRemoteSyncedAt": .number(Date().timeIntervalSince1970 * 1_000), "remoteAutoSync": .bool(true),
+        ]
+        userData.playlists.insert(playlist, at: 0)
+        userData.revision += 1
+        persistUserData()
+    }
+
+    func unfavoriteCollection(_ source: CollectionSource) {
+        guard let identity = source.favoriteIdentity else { return }
+        userData.playlists.removeAll {
+            $0.isImported && $0.importSource == identity.source
+                && $0.importURL.map(PlaylistIdentity.canonicalID) == PlaylistIdentity.canonicalID(identity.id)
+        }
+        userData.revision += 1
+        persistUserData()
+    }
+
+    func playAll(_ tracks: [MusicTrack]) async {
+        let first = playback.mode == .shuffled ? tracks.randomElement() : tracks.first
+        guard let first else { return }
+        await play(first, in: tracks)
+    }
+
+    func retryUserDataSync() async {
+        saveUserDataTask?.cancel()
+        await syncUserData(userData)
     }
 
     private struct LocalMatchSnapshot: Codable { let track: MusicTrack? }
@@ -410,6 +529,11 @@ final class AppModel {
     }
 
     func lyrics(for track: MusicTrack) async -> String {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
+            return "[00:00.00]柠檬音乐\n[00:05.00]夜色里的旋律\n[00:10.00]让音乐陪伴每一天"
+        }
+        #endif
         let key = "lyrics.v2.\(track.id)"
         if let cached: String = cacheStore.value(String.self, for: key, allowExpired: false) { return cached }
         let value = (try? await api.lyrics(for: track)) ?? ""
@@ -419,6 +543,8 @@ final class AppModel {
 
     func clearArtworkCache() { artworkStore.clear() }
     func clearAudioCache() {
+        collectionCache.reset()
+        if let profile { collectionCache.configure(account: accountKey(profile)) }
         playback.cancelAutomaticCaching()
         audioCache.clear()
     }
@@ -433,13 +559,52 @@ final class AppModel {
 
     private func persistUserData() {
         cacheStore.save(userData, for: "library.userData")
+        pendingUserDataSync = true
+        cacheStore.save(true, for: "library.userData.pending")
         saveUserDataTask?.cancel()
         let snapshot = userData
         saveUserDataTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
-            try? await self?.api.saveUserData(snapshot)
+            await self?.syncUserData(snapshot)
         }
+    }
+
+    private func syncUserData(_ snapshot: LibraryUserData) async {
+        do {
+            try Task.checkCancellation()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
+                pendingUserDataSync = false
+                userDataSyncError = nil
+                return
+            }
+            #endif
+            try await api.saveUserData(snapshot)
+            guard !Task.isCancelled else { return }
+            userDataSyncError = nil
+            if snapshot.revision == userData.revision {
+                pendingUserDataSync = false
+                cacheStore.save(false, for: "library.userData.pending")
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            userDataSyncError = error.localizedDescription
+        }
+    }
+
+    private func accountKey(_ profile: ServerProfile) -> String {
+        var server = URLComponents(string: profile.baseURL)
+        let path = server?.path.replacingOccurrences(of: "/+$", with: "", options: .regularExpression) ?? ""
+        server?.path = path
+        return "\(server?.string ?? profile.baseURL)|\(profile.user?.id ?? profile.username)"
+    }
+
+    private func configureDownloads() {
+        guard let profile else { return }
+        collectionCache.configure(account: accountKey(profile))
+        nasDownloads.configure(account: accountKey(profile))
+        if pendingUserDataSync { Task { await retryUserDataSync() } }
     }
 
     private func connectWebSocket() {
@@ -450,6 +615,10 @@ final class AppModel {
     }
 
     private func handleWebSocketEvent(_ type: String) {
+        if type.hasPrefix("download:") {
+            Task { await nasDownloads.refresh() }
+            return
+        }
         let relevant = [
             "library:changed", "library:removed", "library:scan-complete",
             "library:user-data-changed", "library:playlists-changed",
@@ -465,12 +634,12 @@ final class AppModel {
         genres = cacheStore.value([String].self, for: "library.genres") ?? []
         sources = cacheStore.value([MusicSource].self, for: "search.sources") ?? []
         userData = cacheStore.value(LibraryUserData.self, for: "library.userData") ?? .empty
+        pendingUserDataSync = cacheStore.value(Bool.self, for: "library.userData.pending") ?? false
         loadDiscoverCache(prefix: "discover.\(selectedSourceID)")
     }
 
     private func loadDiscoverCache(prefix: String) {
         discoverSongs = cacheStore.value([MusicTrack].self, for: prefix + ".songs") ?? []
-        discoverAlbums = cacheStore.value([MusicAlbum].self, for: prefix + ".albums") ?? []
         toplists = cacheStore.value([MusicPlaylist].self, for: prefix + ".toplists") ?? []
         discoverPlaylists = cacheStore.value([MusicPlaylist].self, for: prefix + ".playlists") ?? []
     }
@@ -502,12 +671,54 @@ final class AppModel {
         genres = []
         sources = []
         userData = .empty
+        pendingUserDataSync = false
+        userDataSyncError = nil
         discoverSongs = []
-        discoverAlbums = []
         toplists = []
         discoverPlaylists = []
         cacheStore.clearAll()
         audioCache.clear()
         artworkStore.clear()
     }
+
+    #if DEBUG
+    private func loadUITestFixtures() async {
+        tracks = ["夜曲", "晴天", "稻香"].enumerated().compactMap { index, name in
+            MusicTrack(json: .object([
+                "filePath": .string("/fixtures/\(index).wav"), "title": .string(name),
+                "artist": .string("周杰伦"), "album": .string("精选"), "duration": .number(20),
+                "mtime": .number(Double(index)),
+            ]))
+        }
+        var imported = MusicPlaylist(id: "fixture-imported", name: "午后音乐", tracks: tracks)
+        imported.preservedFields = ["playlistType": .string("imported"), "importSource": .string("wy"), "importUrl": .string("fixture")]
+        userData = LibraryUserData(
+            playlists: [MusicPlaylist(id: "fixture-custom", name: "我的精选", tracks: tracks), imported],
+            favorites: Array(tracks.prefix(1)), recentPlays: Array(tracks.prefix(1)), revision: 0
+        )
+        albums = [MusicAlbum(json: .object(["id": .string("album"), "title": .string("精选"), "artist": .string("周杰伦")]))].compactMap { $0 }
+        artists = [MusicArtist(json: .object(["id": .string("artist"), "name": .string("周杰伦")]))].compactMap { $0 }
+        genres = ["流行"]
+        sources = [MusicSource(id: "wy", name: "网易云")]
+        selectedSourceID = "wy"
+        toplists = [MusicPlaylist(id: "wy:rank", name: "热歌榜")]
+        discoverPlaylists = [MusicPlaylist(id: "wy:fixture", name: "午后音乐")]
+        discoverSongs = tracks
+        profile = ServerProfile(baseURL: "https://fixtures.invalid", username: "fixture", user: nil, apiPrefix: "/api")
+        sessionState = .ready
+        playback.setMode(.sequential)
+        playback.preferredTrack = nil
+        collectionCache.preferredTrack = nil
+        collectionCache.configure(account: "fixture")
+        nasDownloads.configure(account: "fixture")
+        let audio = UITestAudio.silence()
+        for track in tracks {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            do {
+                try audio.write(to: url)
+                _ = try audioCache.storeDownloadedFile(at: url, key: track.id, mimeType: "audio/wav", protectedKey: nil)
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+    #endif
 }

@@ -45,6 +45,7 @@ struct MiniPlayerView: View {
             }
             .buttonStyle(.plain)
             .layoutPriority(1)
+            .accessibilityIdentifier("miniPlayer.open")
 
             Button { model.playback.togglePlayPause() } label: {
                 Image(systemName: model.playback.isPlaying ? "pause.fill" : "play.fill")
@@ -83,13 +84,20 @@ struct MiniPlayerView: View {
 struct FullPlayerView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingLyrics = false
     @State private var showingQueue = false
     @State private var lyricDocument = LyricDocument.empty
     @State private var lyricsLoading = false
-    @State private var dismissOffset: CGFloat = 0
+    @State private var dismissProgress: CGFloat = 0
+    @State private var isDismissing = false
+    @State private var isSeeking = false
+    @State private var dismissGestureAccepted = false
+    @State private var progressFrame = CGRect.zero
 
     var body: some View {
+        GeometryReader { presentation in
         NavigationStack {
             GeometryReader { proxy in
                 let artworkSize = min(proxy.size.width - 44, max(168, proxy.size.height * 0.39), 400)
@@ -149,12 +157,14 @@ struct FullPlayerView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 10)
+                    .modifier(AccessiblePlayerScroll(enabled: dynamicTypeSize.isAccessibilitySize))
                 }
             }
             .background(playerBackground)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("关闭", systemImage: "chevron.down") { dismiss() }
+                    Button("关闭", systemImage: "chevron.down") { closePlayer() }
+                        .accessibilityIdentifier("player.close")
                 }
                 ToolbarItem(placement: .principal) {
                     Text("正在播放").font(.subheadline.weight(.semibold))
@@ -165,8 +175,13 @@ struct FullPlayerView: View {
                 await loadLyrics(for: model.playback.currentTrack)
             }
         }
-        .offset(x: dismissOffset)
-        .simultaneousGesture(edgeDismissGesture)
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .offset(y: reduceMotion ? 0 : dismissProgress * presentation.size.height)
+        .opacity(reduceMotion ? 1 - dismissProgress : 1)
+        .simultaneousGesture(edgeDismissGesture(width: presentation.size.width))
+        .accessibilityIdentifier("player.surface")
+        }
+        .presentationBackground(.clear)
     }
 
     private var progress: some View {
@@ -174,7 +189,7 @@ struct FullPlayerView: View {
             Slider(value: Binding(
                 get: { min(model.playback.position, max(model.playback.duration, 1)) },
                 set: { model.playback.seek(to: $0) }
-            ), in: 0...max(model.playback.duration, 1))
+            ), in: 0...max(model.playback.duration, 1), onEditingChanged: { isSeeking = $0 })
             .tint(.primary)
             HStack {
                 Text(time(model.playback.position))
@@ -184,6 +199,7 @@ struct FullPlayerView: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
         }
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { progressFrame = $0 }
     }
 
     private var controls: some View {
@@ -216,11 +232,13 @@ struct FullPlayerView: View {
             }
             Spacer()
             PlayerIconButton(
-                icon: model.playback.isShuffled ? "shuffle.circle.fill" : "shuffle",
-                label: model.playback.isShuffled ? "关闭随机播放" : "随机播放"
+                icon: model.playback.mode.symbol,
+                label: model.playback.mode.title
             ) {
-                model.playback.toggleShuffle()
+                model.playback.cycleMode()
             }
+            .accessibilityIdentifier("player.mode")
+            .accessibilityValue(model.playback.mode.title)
             Spacer()
             PlayerIconButton(icon: "list.bullet", label: "播放队列") { showingQueue = true }
         }
@@ -284,28 +302,52 @@ struct FullPlayerView: View {
         lyricsLoading = false
     }
 
-    private var edgeDismissGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
+    private func edgeDismissGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { value in
-                guard value.startLocation.x <= 22,
+                guard !showingQueue, !isDismissing, !isSeeking, value.startLocation.x <= 22,
                       value.translation.width > 0,
                       abs(value.translation.width) > abs(value.translation.height) else { return }
-                dismissOffset = min(value.translation.width, 180)
+                if !dismissGestureAccepted,
+                   progressFrame.insetBy(dx: -24, dy: -12).contains(value.startLocation) { return }
+                dismissGestureAccepted = true
+                dismissProgress = min(1, value.translation.width / max(1, width))
             }
             .onEnded { value in
+                defer { dismissGestureAccepted = false }
                 let isEdgeSwipe = value.startLocation.x <= 22
                     && value.translation.width > 0
                     && abs(value.translation.width) > abs(value.translation.height)
-                let shouldDismiss = isEdgeSwipe
-                    && max(value.translation.width, value.predictedEndTranslation.width) > 120
+                let shouldDismiss = dismissGestureAccepted && !showingQueue && isEdgeSwipe
+                    && max(value.translation.width, value.predictedEndTranslation.width) > width / 3
                 if shouldDismiss {
-                    dismiss()
+                    closePlayer()
                 } else {
                     withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.86)) {
-                        dismissOffset = 0
+                        dismissProgress = 0
                     }
                 }
             }
+    }
+
+    private func closePlayer() {
+        guard !isDismissing else { return }
+        isDismissing = true
+        withAnimation(.easeOut(duration: reduceMotion ? 0.15 : 0.25), completionCriteria: .removed) {
+            dismissProgress = 1
+        } completion: {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { dismiss() }
+        }
+    }
+}
+
+private struct AccessiblePlayerScroll: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled { ScrollView { content }.scrollBounceBehavior(.basedOnSize) }
+        else { content }
     }
 }
 
@@ -317,6 +359,8 @@ private struct PlayerIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
+                .id(icon)
+                .symbolRenderingMode(.monochrome)
                 .font(.title3.weight(.semibold))
                 .frame(width: 46, height: 46)
                 .background(.thinMaterial, in: Circle())

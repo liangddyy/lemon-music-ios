@@ -41,7 +41,10 @@ struct LibraryView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 18)], spacing: 22) {
                     ForEach(model.albums) { album in
                         NavigationLink {
-                            TrackCollectionView(title: album.title, tracks: model.tracks.filter { $0.album == album.title })
+                            CollectionDetailView(source: .local(LocalCollection(
+                                kind: .album, value: album.title, artist: album.artist, artworkURL: album.artworkURL,
+                                artworkCacheKey: "album:\(album.id)"
+                            )))
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 AlbumArtwork(album: album, size: 160)
@@ -59,7 +62,7 @@ struct LibraryView: View {
         case .artists:
             List(model.artists) { artist in
                 NavigationLink {
-                    TrackCollectionView(title: artist.name, tracks: model.tracks.filter { $0.artist == artist.name })
+                    CollectionDetailView(source: .local(LocalCollection(kind: .artist, value: artist.name)))
                 } label: {
                     Label(artist.name, systemImage: "person.crop.circle.fill")
                 }
@@ -83,7 +86,7 @@ struct LibraryView: View {
         case .genres:
             List(model.genres, id: \.self) { genre in
                 NavigationLink {
-                    TrackCollectionView(title: genre, tracks: model.tracks.filter { $0.genre == genre })
+                    CollectionDetailView(source: .local(LocalCollection(kind: .genre, value: genre)))
                 } label: {
                     Label(genre, systemImage: "guitars.fill")
                 }
@@ -92,21 +95,3 @@ struct LibraryView: View {
         }
     }
 }
-
-struct TrackCollectionView: View {
-    @Environment(AppModel.self) private var model
-    let title: String
-    let tracks: [MusicTrack]
-
-    var body: some View {
-        List(tracks) { TrackRow(track: $0, queue: tracks) }
-            .listStyle(.plain)
-            .navigationTitle(title)
-            .toolbar {
-                if let first = tracks.first {
-                    Button("播放", systemImage: "play.fill") { Task { await model.play(first, in: tracks) } }
-                }
-            }
-    }
-}
-

@@ -32,6 +32,21 @@ struct MainTabView: View {
         .fullScreenCover(isPresented: $showingPlayer) {
             FullPlayerView()
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let error = model.userDataSyncError {
+                HStack(spacing: 8) {
+                    Label("数据同步失败", systemImage: "exclamationmark.circle")
+                    Text(error).lineLimit(1).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("重试同步", systemImage: "arrow.clockwise") { Task { await model.retryUserDataSync() } }
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                }
+                .font(.caption)
+                .padding(.horizontal)
+                .background(Color(.secondarySystemBackground))
+            }
+        }
         .overlay(alignment: .top) {
             if model.sessionState == .offline {
                 Text("离线模式")

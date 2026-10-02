@@ -111,6 +111,7 @@ struct PlaylistArtwork: View {
     @Environment(AppModel.self) private var model
     let playlist: MusicPlaylist
     let size: CGFloat
+    var cacheKey: String? = nil
     @State private var image: UIImage?
     @State private var remoteLoaded = false
 
@@ -132,7 +133,7 @@ struct PlaylistArtwork: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .task(id: playlist.artworkURL) {
-            image = await model.artworkStore.image(key: "playlist:\(playlist.id)", remoteURL: playlist.artworkURL)
+            image = await model.artworkStore.image(key: cacheKey ?? "playlist:\(playlist.id)", remoteURL: playlist.artworkURL)
             remoteLoaded = true
         }
     }

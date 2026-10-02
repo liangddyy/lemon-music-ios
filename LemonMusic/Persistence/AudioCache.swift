@@ -16,6 +16,14 @@ final class AudioCache {
 
     var onStreamingProgress: ((String, Int64, Int64) -> Void)?
     var onStreamingCompleted: ((String) -> Void)?
+    var onChange: (() -> Void)?
+    var protectedKeys: Set<String> = []
+    var playingKey: String?
+
+    enum StorageError: LocalizedError {
+        case capacity
+        var errorDescription: String? { "缓存空间不足，请调整缓存上限或清理缓存后重试" }
+    }
 
     var maxBytes: Int64 {
         get {
@@ -25,9 +33,9 @@ final class AudioCache {
         set { UserDefaults.standard.set(NSNumber(value: newValue), forKey: defaultsKey) }
     }
 
-    init(container: ModelContainer) {
+    init(container: ModelContainer, root: URL? = nil) {
         self.container = container
-        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("lemon-music", isDirectory: true)
         directory = root.appendingPathComponent("audio", isDirectory: true)
         streamCache = ProgressiveAudioCache(directory: root.appendingPathComponent("audio-partial", isDirectory: true))
@@ -63,13 +71,18 @@ final class AudioCache {
         key: String,
         mimeType: String,
         expectedByteCount: Int64? = nil,
-        protectedKey: String?
+        protectedKey: String?,
+        requiresCapacity: Bool = false
     ) throws -> URL {
         let resource = try temporaryURL.resourceValues(forKeys: [.fileSizeKey])
         let size = Int64(resource.fileSize ?? 0)
         guard size > 1_024 else { throw URLError(.cannotDecodeContentData) }
         if let expectedByteCount, expectedByteCount > 0, size != expectedByteCount {
             throw URLError(.cannotDecodeContentData)
+        }
+        if requiresCapacity {
+            try Self.validateAudioFile(at: temporaryURL, mimeType: mimeType)
+            try makeRoom(for: size, replacing: key)
         }
 
         let fileName = safeFileName(for: key) + "." + fileExtension(for: mimeType)
@@ -103,7 +116,43 @@ final class AudioCache {
         }
         try context.save()
         evictIfNeeded(protectedKey: protectedKey)
+        onChange?()
         return destination
+    }
+
+    func makeRoom(for byteCount: Int64, replacing key: String) throws {
+        let context = container.mainContext
+        let records = (try? context.fetch(FetchDescriptor<AudioCacheEntry>(
+            sortBy: [SortDescriptor(\.lastAccessedAt)]
+        ))) ?? []
+        var total = usedBytes() - (records.first(where: { $0.key == key })?.byteCount ?? 0)
+            - Int64(streamCache.cachedByteCount(for: key))
+        let protected = protectedKeys.union(playingKey.map { [$0] } ?? []).union([key])
+        guard byteCount <= maxBytes else { throw StorageError.capacity }
+        let protectedTotal = records.filter { protected.contains($0.key) && $0.key != key }.reduce(0) { $0 + $1.byteCount }
+            + protected.filter { $0 != key }.reduce(0) { $0 + Int64(streamCache.cachedByteCount(for: $1)) }
+        guard protectedTotal + byteCount <= maxBytes else { throw StorageError.capacity }
+        for entry in records where total + byteCount > maxBytes && !protected.contains(entry.key) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath))
+            total -= entry.byteCount
+            context.delete(entry)
+        }
+        try context.save()
+        guard total + byteCount <= maxBytes else { throw StorageError.capacity }
+    }
+
+    nonisolated static func validateAudioFile(at url: URL, mimeType: String) throws {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let prefix = try file.read(upToCount: 64) ?? Data()
+        let bytes = Array(prefix)
+        let signature = String(data: prefix.prefix(4), encoding: .ascii)
+        let mp4 = bytes.count >= 8 && String(data: prefix.subdata(in: 4..<8), encoding: .ascii) == "ftyp"
+        let frame = bytes.count >= 2 && bytes[0] == 0xff && (bytes[1] & 0xe0) == 0xe0
+        guard ["RIFF", "fLaC", "OggS"].contains(signature ?? "")
+                || prefix.starts(with: Data("ID3".utf8)) || mp4 || frame else {
+            throw URLError(.cannotDecodeContentData)
+        }
     }
 
     func remove(for key: String) {
@@ -115,6 +164,7 @@ final class AudioCache {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath))
         context.delete(entry)
         try? context.save()
+        onChange?()
     }
 
     func usedBytes() -> Int64 {
@@ -145,13 +195,17 @@ final class AudioCache {
         guard fullTotal + partialTotal > maxBytes else { return }
 
         for entry in entries where fullTotal + partialTotal > maxBytes {
-            guard entry.key != protectedKey else { continue }
+            guard entry.key != protectedKey, entry.key != playingKey, !protectedKeys.contains(entry.key) else { continue }
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath))
             fullTotal -= entry.byteCount
             context.delete(entry)
         }
         try? context.save()
-        streamCache.evict(toFit: max(0, maxBytes - fullTotal), protectedKey: protectedKey)
+        streamCache.evict(
+            toFit: max(0, maxBytes - fullTotal),
+            protectedKey: protectedKey ?? playingKey,
+            protectedKeys: protectedKeys
+        )
         entries.removeAll()
     }
 
@@ -398,7 +452,7 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
         return Int64(dataFiles().reduce(0) { $0 + fileSize(at: $1) })
     }
 
-    func evict(toFit allowedBytes: Int64, protectedKey: String?) {
+    func evict(toFit allowedBytes: Int64, protectedKey: String?, protectedKeys: Set<String> = []) {
         lock.lock()
         defer { lock.unlock() }
         var entries = metadataFiles().compactMap { url -> (Metadata, URL)? in
@@ -409,7 +463,8 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
         var total = Int64(dataFiles().reduce(0) { $0 + fileSize(at: $1) })
         while total > allowedBytes, !entries.isEmpty {
             let entry = entries.removeFirst()
-            guard entry.0.key != protectedKey, !finalizing.contains(entry.0.key) else { continue }
+            guard entry.0.key != protectedKey, !protectedKeys.contains(entry.0.key),
+                  !finalizing.contains(entry.0.key) else { continue }
             let dataURL = self.dataURL(for: entry.0.key)
             total -= Int64(fileSize(at: dataURL))
             try? FileManager.default.removeItem(at: dataURL)

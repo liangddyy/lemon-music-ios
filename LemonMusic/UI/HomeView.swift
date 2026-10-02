@@ -16,13 +16,13 @@ struct HomeView: View {
                 if !model.recentTracks.isEmpty {
                     trackCarousel(title: "最近播放", tracks: Array(model.recentTracks.prefix(12)))
                 }
-                if !model.recentlyAdded.isEmpty {
-                    trackCarousel(title: "最近添加", tracks: Array(model.recentlyAdded.prefix(12)))
-                }
                 if !model.userData.favorites.isEmpty {
                     trackSection(title: "我的收藏", tracks: Array(model.userData.favorites.prefix(8)))
                 }
                 playlistSection
+                if !model.recentlyAdded.isEmpty {
+                    trackCarousel(title: "最近添加", tracks: Array(model.recentlyAdded.prefix(12)))
+                }
                 if model.tracks.isEmpty {
                     EmptyContentView(title: "音乐库还是空的", systemImage: "music.note.house", message: "请先在 Lemon Music 服务端扫描音乐库")
                         .frame(minHeight: 300)
@@ -157,26 +157,6 @@ struct HomeView: View {
 }
 
 struct PlaylistDetailView: View {
-    @Environment(AppModel.self) private var model
     let playlist: MusicPlaylist
-    private var currentPlaylist: MusicPlaylist {
-        model.userData.playlists.first(where: { $0.id == playlist.id }) ?? playlist
-    }
-
-    var body: some View {
-        List {
-            if currentPlaylist.tracks.isEmpty {
-                EmptyContentView(title: "歌单为空", systemImage: "music.note.list", message: "从歌曲菜单中添加音乐")
-            } else {
-                ForEach(currentPlaylist.tracks) { TrackRow(track: $0, queue: currentPlaylist.tracks) }
-            }
-        }
-        .listStyle(.plain)
-        .navigationTitle(currentPlaylist.name)
-        .toolbar {
-            if let first = currentPlaylist.tracks.first {
-                Button("播放", systemImage: "play.fill") { Task { await model.play(first, in: currentPlaylist.tracks) } }
-            }
-        }
-    }
+    var body: some View { CollectionDetailView(source: .playlist(playlist)) }
 }

@@ -82,7 +82,8 @@ struct SearchView: View {
             List(model.onlineSearchAlbums) { album in
                 NavigationLink {
                     OnlineCollectionView(collection: OnlineCollection(
-                        kind: .album, source: album.sourceID, id: album.providerID, title: album.title
+                        kind: .album, source: album.sourceID, id: album.providerID, title: album.title,
+                        artworkURL: album.artworkURL
                     ))
                 } label: {
                     HStack(spacing: 12) {
@@ -104,7 +105,8 @@ struct SearchView: View {
             List(model.onlineSearchPlaylists) { playlist in
                 NavigationLink {
                     OnlineCollectionView(collection: OnlineCollection(
-                        kind: .playlist, source: model.selectedSourceID, id: playlist.providerID, title: playlist.name
+                        kind: .playlist, source: model.selectedSourceID, id: playlist.providerID, title: playlist.name,
+                        artworkURL: playlist.artworkURL
                     ))
                 } label: {
                     HStack(spacing: 12) {

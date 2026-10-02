@@ -17,31 +17,6 @@ struct DiscoverView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if !model.discoverAlbums.isEmpty {
-                    VStack(spacing: 12) {
-                        SectionTitle(title: "新碟")
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 14) {
-                                ForEach(model.discoverAlbums) { album in
-                                    NavigationLink {
-                                        OnlineCollectionView(collection: OnlineCollection(
-                                            kind: .album, source: album.sourceID, id: album.providerID, title: album.title
-                                        ))
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            AlbumArtwork(album: album, size: 145)
-                                            Text(album.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                            Text(album.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                        }
-                                        .frame(width: 145, alignment: .leading)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-                }
-
                 if !model.toplists.isEmpty {
                     VStack(spacing: 12) {
                         SectionTitle(title: "排行榜")
@@ -50,7 +25,8 @@ struct DiscoverView: View {
                                 ForEach(model.toplists) { list in
                                     NavigationLink {
                                         OnlineCollectionView(collection: OnlineCollection(
-                                            kind: .toplist, source: model.selectedSourceID, id: list.providerID, title: list.name
+                                            kind: .toplist, source: model.selectedSourceID, id: list.providerID,
+                                            title: list.name, artworkURL: list.artworkURL
                                         ))
                                     } label: {
                                         VStack(alignment: .leading, spacing: 8) {
@@ -75,7 +51,7 @@ struct DiscoverView: View {
                                     NavigationLink {
                                         OnlineCollectionView(collection: OnlineCollection(
                                             kind: .playlist, source: model.selectedSourceID,
-                                            id: playlist.providerID, title: playlist.name
+                                            id: playlist.providerID, title: playlist.name, artworkURL: playlist.artworkURL
                                         ))
                                     } label: {
                                         VStack(alignment: .leading, spacing: 8) {
@@ -96,8 +72,7 @@ struct DiscoverView: View {
                         SectionTitle(title: "新歌")
                         ForEach(model.discoverSongs.prefix(20)) { TrackRow(track: $0, queue: model.discoverSongs) }
                     }
-                } else if !model.isRefreshingDiscover, model.discoverAlbums.isEmpty,
-                          model.toplists.isEmpty, model.discoverPlaylists.isEmpty {
+                } else if !model.isRefreshingDiscover, model.toplists.isEmpty, model.discoverPlaylists.isEmpty {
                     EmptyContentView(title: "暂无发现内容", systemImage: "sparkles", message: "请确认服务端已启用当前音源")
                         .frame(minHeight: 280)
                 }

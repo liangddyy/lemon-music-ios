@@ -19,35 +19,38 @@ final class PlaybackController {
     }
 
     private(set) var currentTrack: MusicTrack?
-    private(set) var queue: [MusicTrack] = []
-    private(set) var currentIndex = 0
+    private var queueState = PlaybackQueue()
+    var queue: [MusicTrack] { queueState.tracks }
+    var currentIndex: Int { queueState.index }
+    var mode: PlaybackMode { queueState.mode }
     private(set) var isPlaying = false
     private(set) var position: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
     private(set) var audioCacheStates: [String: AudioCacheState] = [:]
     var lastError: String?
-    var repeatMode = false
-    var isShuffled = false
     var showingFullPlayer = false
     var preferredTrack: ((MusicTrack) async -> MusicTrack)?
+    var willPlayTrack: ((MusicTrack) async -> Void)?
+    var onTrackChanged: (() -> Void)?
 
     private nonisolated(unsafe) let player: AudioPlayer
     private let playerDelegate: LemonAudioPlayerDelegate
     private let api: LemonAPIClient
     private let audioCache: AudioCache
     private let artworkStore: ArtworkStore
+    private let defaults: UserDefaults
     private var progressTask: Task<Void, Never>?
     private var retryingCurrentItem = false
     private var currentPlaybackUsesCache = false
     private var currentPlaybackUsesPartialCache = false
-    private var originalQueue: [MusicTrack]?
     private var playbackRequest = PlaybackRequestState()
     private var isLoadingTrack = false
 
-    init(api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore) {
+    init(api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore, defaults: UserDefaults = .standard) {
         self.api = api
         self.audioCache = audioCache
         self.artworkStore = artworkStore
+        self.defaults = defaults
 
         let configuration = AudioPlayerConfiguration(
             flushQueueOnSeek: true,
@@ -79,13 +82,10 @@ final class PlaybackController {
 
     func play(_ track: MusicTrack, in tracks: [MusicTrack]? = nil) async {
         if let tracks, let index = tracks.firstIndex(of: track) {
-            queue = tracks
-            currentIndex = index
-        } else if let index = queue.firstIndex(of: track) {
-            currentIndex = index
+            queueState.replace(with: tracks, selecting: tracks[index])
+        } else if queueState.select(track) {
         } else {
-            queue = [track]
-            currentIndex = 0
+            queueState.replace(with: [track], selecting: track)
         }
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
@@ -100,6 +100,19 @@ final class PlaybackController {
         updateNowPlaying()
     }
 
+    func stop() {
+        player.stop()
+        playbackRequest = PlaybackRequestState()
+        audioCache.playingKey = nil
+        isPlaying = false
+        currentTrack = nil
+        queueState = PlaybackQueue()
+        position = 0
+        duration = 0
+        persistQueue()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     func resume() {
         if duration > 0, position >= duration - 0.5 {
             Task { await loadCurrentTrack(autoplay: true, forceRefresh: false) }
@@ -112,16 +125,13 @@ final class PlaybackController {
 
     func next() async {
         guard !queue.isEmpty else { return }
-        if currentIndex + 1 < queue.count { currentIndex += 1 }
-        else if repeatMode { currentIndex = 0 }
-        else { pause(); return }
+        queueState.advance(natural: false)
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
     func previous() async {
         if position > 3 { seek(to: 0); return }
-        guard currentIndex > 0 else { seek(to: 0); return }
-        currentIndex -= 1
+        queueState.retreat()
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
@@ -133,50 +143,35 @@ final class PlaybackController {
     }
 
     func addToQueue(_ tracks: [MusicTrack]) {
-        queue.append(contentsOf: tracks)
+        queueState.append(tracks)
         persistQueue()
     }
 
     func playNext(_ track: MusicTrack) {
-        let insertion = min(currentIndex + 1, queue.count)
-        queue.insert(track, at: insertion)
+        queueState.insertNext(track)
         persistQueue()
     }
 
     func removeFromQueue(at offsets: IndexSet) {
-        for offset in offsets.sorted(by: >) where offset != currentIndex {
-            queue.remove(at: offset)
-            if offset < currentIndex { currentIndex -= 1 }
-        }
+        queueState.remove(at: offsets)
         persistQueue()
     }
 
     func moveQueue(from offsets: IndexSet, to destination: Int) {
-        let queuedTrack = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil
-        queue.move(fromOffsets: offsets, toOffset: destination)
-        if let track = queuedTrack, let index = queue.firstIndex(of: track) { currentIndex = index }
+        queueState.move(from: offsets, to: destination)
         persistQueue()
     }
 
-    func toggleShuffle() {
-        guard queue.indices.contains(currentIndex) else { return }
-        let queuedTrack = queue[currentIndex]
-        if isShuffled, let originalQueue {
-            queue = originalQueue
-            currentIndex = queue.firstIndex(of: queuedTrack) ?? 0
-            self.originalQueue = nil
-        } else {
-            originalQueue = queue
-            let remaining = queue.enumerated().filter { $0.offset != currentIndex }.map(\.element).shuffled()
-            queue = [queuedTrack] + remaining
-            currentIndex = 0
-        }
-        isShuffled.toggle()
+    func setMode(_ mode: PlaybackMode) {
+        queueState.setMode(mode)
         persistQueue()
     }
+
+    func cycleMode() { setMode(mode.next) }
 
     func audioCacheState(for track: MusicTrack) -> AudioCacheState {
-        audioCacheStates[track.id] ?? .notCached
+        if audioCache.cachedURL(for: track.id) != nil { return .cached }
+        return audioCacheStates[track.id] ?? .notCached
     }
 
     func cancelAutomaticCaching() {
@@ -190,7 +185,8 @@ final class PlaybackController {
 
     func handleNaturalEnd(playbackID: String) async {
         guard playbackRequest.consumeEnd(for: playbackID) else { return }
-        await next()
+        queueState.advance(natural: true)
+        await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
     func handlePlaybackError() async {
@@ -216,7 +212,12 @@ final class PlaybackController {
         let requestedTrack = queue[currentIndex]
         var track = await preferredTrack?(requestedTrack) ?? requestedTrack
         guard playbackRequest.isCurrent(requestID) else { return }
+        audioCache.playingKey = track.id
+        await willPlayTrack?(track)
+        guard playbackRequest.isCurrent(requestID) else { return }
         currentTrack = track
+        audioCache.playingKey = track.id
+        onTrackChanged?()
         retryingCurrentItem = forceRefresh
         currentPlaybackUsesCache = false
         currentPlaybackUsesPartialCache = false
@@ -242,6 +243,10 @@ final class PlaybackController {
                     guard playbackRequest.isCurrent(requestID) else { return }
                     track = requestedTrack
                     currentTrack = track
+                    audioCache.playingKey = track.id
+                    await willPlayTrack?(track)
+                    guard playbackRequest.isCurrent(requestID) else { return }
+                    onTrackChanged?()
                     currentPlaybackUsesPartialCache = false
                     audioCacheStates[track.id] = .caching(0)
                     streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh)
@@ -259,6 +264,8 @@ final class PlaybackController {
             persistQueue()
         } catch {
             guard playbackRequest.isCurrent(requestID) else { return }
+            audioCache.playingKey = nil
+            onTrackChanged?()
             isPlaying = false
             audioCacheStates[track.id] = .failed
             lastError = error.localizedDescription
@@ -320,19 +327,29 @@ final class PlaybackController {
     }
 
     private func persistQueue() {
+        if let state = try? JSONEncoder().encode(queueState) {
+            defaults.set(state, forKey: "lemon.playback.state")
+        }
         guard let data = try? JSONEncoder().encode(queue) else { return }
-        UserDefaults.standard.set(data, forKey: "lemon.playback.queue")
-        UserDefaults.standard.set(currentIndex, forKey: "lemon.playback.index")
-        UserDefaults.standard.set(position, forKey: "lemon.playback.position")
+        defaults.set(data, forKey: "lemon.playback.queue")
+        defaults.set(currentIndex, forKey: "lemon.playback.index")
+        defaults.set(position, forKey: "lemon.playback.position")
     }
 
     private func restoreQueue() {
-        guard let data = UserDefaults.standard.data(forKey: "lemon.playback.queue"),
+        if let data = defaults.data(forKey: "lemon.playback.state"),
+           let state = try? JSONDecoder().decode(PlaybackQueue.self, from: data) {
+            queueState = state
+            currentTrack = queueState.current?.track
+            position = defaults.double(forKey: "lemon.playback.position")
+            return
+        }
+        guard let data = defaults.data(forKey: "lemon.playback.queue"),
               let tracks = try? JSONDecoder().decode([MusicTrack].self, from: data), !tracks.isEmpty else { return }
-        queue = tracks
-        currentIndex = min(UserDefaults.standard.integer(forKey: "lemon.playback.index"), tracks.count - 1)
-        currentTrack = tracks[currentIndex]
-        position = UserDefaults.standard.double(forKey: "lemon.playback.position")
+        let index = min(max(0, defaults.integer(forKey: "lemon.playback.index")), tracks.count - 1)
+        queueState.replace(with: tracks, selecting: tracks[index])
+        currentTrack = tracks[index]
+        position = defaults.double(forKey: "lemon.playback.position")
         if let track = currentTrack, audioCache.cachedURL(for: track.id) != nil {
             audioCacheStates[track.id] = .cached
         }

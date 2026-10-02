@@ -116,12 +116,12 @@ struct LemonAPIClientTests {
         model.selectedSourceID = "wy"
         await model.refreshDiscover(force: true)
         #expect(model.discoverSongs.first?.id == "online:wy:song-1")
-        #expect(model.discoverAlbums.count == 1)
+        #expect(log.count("/api/v1/discover/new-albums") == 0)
         #expect(model.discoverError?.contains("排行榜") == true)
         #expect(!model.isRefreshingDiscover)
         await model.refreshDiscover(force: true)
         #expect(model.discoverSongs.first?.id == "online:wy:song-2")
-        #expect(model.discoverAlbums.count == 1)
+        #expect(log.count("/api/v1/discover/new-albums") == 0)
         await model.refreshDiscover()
         #expect(log.count("/api/v1/discover/new-songs") == 2)
         #expect(log.count("/api/v1/discover/toplists") == 2)
@@ -172,6 +172,121 @@ struct LemonAPIClientTests {
         await model.searchOnline("Song", kind: .playlists)
         #expect(model.onlineSearchPlaylists.first?.providerID == "p1")
         #expect(log.count("/api/v1/search/playlist") == 1)
+    }
+
+    @MainActor @Test func completeLocalCollectionsFetchAllPagesWithServerFilter() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/library/tracks")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            #expect(query.contains(URLQueryItem(name: "artist", value: "Artist")))
+            let count = log.record("pages")
+            let body = count == 1
+                ? #"{"data":[{"filePath":"/a.mp3","title":"A"}],"total":2}"#
+                : #"{"data":[{"filePath":"/b.mp3","title":"B"}],"total":2}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        let tracks = try await model.completeCollection(.local(LocalCollection(kind: .artist, value: "Artist")))
+        #expect(tracks.map(\.title) == ["A", "B"])
+        #expect(log.count("pages") == 2)
+    }
+
+    @MainActor @Test func incompleteOnlinePlaylistCannotBecomeFullCollection() async throws {
+        let client = try await stubClient()
+        URLProtocolStub.handler = { request in
+            let body = #"{"data":{"list":[{"songId":"1","name":"A"}],"trackTotal":2}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        let source = CollectionSource.online(OnlineCollection(kind: .playlist, source: "wy", id: "p", title: "P"))
+        await #expect(throws: CollectionError.self) { try await model.completeCollection(source) }
+        #expect(model.cachedCompleteCollection(source) == nil)
+    }
+
+    @MainActor @Test func favoritePlaylistDeduplicatesAndRetriesFailedSynchronization() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            #expect(request.url?.path == "/api/v1/library/user-data")
+            let root = try #require(JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any])
+            let playlists = try #require(root["playlists"] as? [[String: Any]])
+            #expect(playlists.count == 1)
+            #expect(playlists[0]["playlistType"] as? String == "imported")
+            let count = log.record("save")
+            let code = count == 1 ? 500 : 200
+            return (HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: nil)!, Data((code == 200 ? #"{"ok":true}"# : #"{"error":"暂时不可用"}"#).utf8))
+        }
+        let model = try AppModel(inMemory: true, api: client)
+        let source = CollectionSource.online(OnlineCollection(kind: .playlist, source: "wy", id: "123", title: "收藏"))
+        model.favoriteCollection(source, tracks: [])
+        model.favoriteCollection(source, tracks: [])
+        #expect(model.userData.playlists.count == 1)
+        await model.retryUserDataSync()
+        #expect(model.userDataSyncError != nil)
+        #expect(model.isCollectionFavorite(source))
+        await model.retryUserDataSync()
+        #expect(model.userDataSyncError == nil)
+        model.createPlaylist(name: "自建")
+        model.unfavoriteCollection(source)
+        #expect(model.userData.playlists.count == 1)
+        #expect(model.userData.playlists.first?.name == "自建")
+    }
+
+    @MainActor @Test func nasBatchesRetryOnlyUnsubmittedChunk() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            if request.url?.path.hasSuffix("/download/list") == true {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("[]".utf8))
+            }
+            #expect(request.url?.path == "/api/v1/download/add")
+            let root = try #require(JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any])
+            let tasks = try #require(root["tasks"] as? [[String: Any]])
+            let call = log.record("add")
+            #expect(tasks.count <= 50)
+            #expect(tasks.first?["quality"] as? String == "flac")
+            let first = tasks.first?["songId"] as? String
+            if call == 1 { #expect(first == "0") }
+            if call == 2 || call == 3 { #expect(first == "50") }
+            let code = call == 2 ? 500 : 200
+            let body = code == 500 ? #"{"error":"temporary"}"# : #"{"ok":true,"ids":["task-"# + String(call) + #""],"skipped":0}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let coordinator = NASDownloadCoordinator(api: client, store: try CacheStore(inMemory: true))
+        coordinator.configure(account: "test")
+        let tracks = try (0..<51).map { index in
+            try #require(MusicTrack(json: .object(["songId": .string("\(index)"), "source": .string("wy"), "name": .string("Song")])))
+        }
+        coordinator.start(key: "p", title: "P", tracks: tracks, quality: .flac)
+        for _ in 0..<100 where coordinator.submitting.contains("p") { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(coordinator.batches["p"]?.cursor == 50)
+        #expect(coordinator.batches["p"]?.error != nil)
+        coordinator.retry(key: "p")
+        for _ in 0..<100 where coordinator.submitting.contains("p") { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(coordinator.batches["p"]?.submissionComplete == true)
+        #expect(log.count("add") == 3)
+        coordinator.reset()
+    }
+
+    @Test func audioDownloadRequestDoesNotLeakBearerToCDN() async throws {
+        let client = try await stubClient()
+        URLProtocolStub.handler = { request in
+            let body = #"{"url":"https://cdn.example.net/audio.mp3"}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let track = try #require(MusicTrack(json: .object(["songId": .string("1"), "source": .string("wy")])))
+        let request = try await client.audioDownloadRequest(for: track)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    private func stubClient() async throws -> LemonAPIClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let client = LemonAPIClient(session: URLSession(configuration: configuration))
+        try await client.configure(baseURL: "https://music.example.com", token: "jwt")
+        return client
     }
 }
 

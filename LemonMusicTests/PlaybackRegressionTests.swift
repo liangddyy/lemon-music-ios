@@ -71,7 +71,10 @@ struct PlaybackRegressionTests {
     @MainActor @Test func rapidSelectionKeepsActualPlayerOnSelectedCachedTrack() async throws {
         let store = try CacheStore(inMemory: true)
         let cache = AudioCache(container: store.container)
-        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore())
+        let player = PlaybackController(
+            api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(),
+            defaults: UserDefaults(suiteName: "lemon.playback-tests.\(UUID())")!
+        )
         let prefix = UUID().uuidString
         let songs = try ["A", "B", "C", "D"].map {
             try track(id: "\(prefix)-\($0)", title: $0, artist: "Artist", duration: 20)
@@ -97,6 +100,10 @@ struct PlaybackRegressionTests {
         await player.play(songs[2], in: songs)
         await player.play(songs[3], in: songs)
         try await Task.sleep(for: .milliseconds(500))
+        // Simulator audio startup is asynchronous, especially while other targets are building.
+        for _ in 0..<100 where !player.isPlaying {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(player.currentTrack?.id == songs[3].id)
         #expect(player.currentIndex == 3)
         #expect(player.audioCacheState(for: songs[3]) == .cached)

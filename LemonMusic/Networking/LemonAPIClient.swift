@@ -235,6 +235,44 @@ actor LemonAPIClient {
         return LibraryUserData(playlists: playlists, favorites: favorites, recentPlays: recentPlays, revision: object["revision"]?.int ?? 0)
     }
 
+    func localCollectionTracks(_ collection: LocalCollection, page: Int) async throws -> TrackPage {
+        var query = [
+            URLQueryItem(name: collection.kind.rawValue, value: collection.value),
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "limit", value: "200"),
+        ]
+        if collection.kind == .album, let artist = collection.artist, !artist.isEmpty {
+            query.append(URLQueryItem(name: "albumArtist", value: artist))
+        }
+        let root = try await request("/library/tracks", query: query)
+        let tracks = extractArray(root).compactMap { MusicTrack(json: $0) }
+        return TrackPage(tracks: tracks, total: root["total"]?.int ?? tracks.count)
+    }
+
+    func addDownloads(_ tracks: [MusicTrack], quality: NASQuality, batchID: String) async throws -> NASSubmission {
+        guard !tracks.isEmpty, tracks.count <= 50 else { throw APIError.invalidResponse }
+        let result = try await request("/download/add", method: "POST", body: .object([
+            "tasks": .array(tracks.map { $0.downloadPayload(quality: quality, batchID: batchID) }),
+        ]))
+        guard let ids = result["ids"]?.array else { throw APIError.invalidResponse }
+        return NASSubmission(ids: ids.compactMap(\.string), skipped: result["skipped"]?.int ?? 0)
+    }
+
+    func downloadTasks() async throws -> [NASDownloadTask] {
+        extractArray(try await request("/download/list")).compactMap { NASDownloadTask(json: $0) }
+    }
+
+    func audioDownloadRequest(for track: MusicTrack, refresh: Bool = false) async throws -> URLRequest {
+        let url = try await resolvePlayURL(for: track, refresh: refresh)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 60
+        if url.scheme == baseURL?.scheme, url.host == baseURL?.host, url.port == baseURL?.port,
+           let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+
     func saveUserData(_ data: LibraryUserData) async throws {
         _ = try await request("/library/user-data", method: "PUT", body: .object([
             "playlists": .array(data.playlists.map(\.json)),
