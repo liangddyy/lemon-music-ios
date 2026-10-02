@@ -103,18 +103,19 @@ struct FullPlayerView: View {
                 let artworkSize = min(proxy.size.width - 44, max(168, proxy.size.height * 0.39), 400)
                 if let track = model.playback.currentTrack {
                     VStack(spacing: 0) {
-                        Group {
-                            if showingLyrics {
-                                PlayerLyricsView(
-                                    document: lyricDocument,
-                                    loading: lyricsLoading,
-                                    position: model.playback.position,
-                                    size: artworkSize
-                                ) {
-                                    withAnimation(.snappy(duration: 0.32)) { showingLyrics = false }
-                                }
-                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                            } else {
+                        if showingLyrics {
+                            PlayerLyricsView(
+                                document: lyricDocument,
+                                loading: lyricsLoading,
+                                position: model.playback.position
+                            ) {
+                                withAnimation(.snappy(duration: 0.32)) { showingLyrics = false }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityIdentifier("player.lyrics")
+                            .transition(.opacity)
+                        } else {
+                            VStack(spacing: 0) {
                                 TrackArtwork(track: track, size: artworkSize)
                                     .shadow(color: .black.opacity(0.24), radius: 28, y: 16)
                                     .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -124,40 +125,46 @@ struct FullPlayerView: View {
                                     .accessibilityAddTraits(.isButton)
                                     .accessibilityLabel("显示歌词")
                                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+
+                                Spacer(minLength: 10)
+
+                                VStack(spacing: 5) {
+                                    Text(track.title)
+                                        .font(.title2.weight(.bold))
+                                        .multilineTextAlignment(.center)
+                                        .lineLimit(2)
+                                    Text(track.artist)
+                                        .font(.title3)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    if !track.album.isEmpty {
+                                        Text(track.album)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
+                                    playbackStatus(track)
+                                        .accessibilityIdentifier("player.cacheStatus")
+                                }
+                                .accessibilityIdentifier("player.trackInfo")
+
+                                Spacer(minLength: 10)
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
                         }
 
-                        Spacer(minLength: 10)
-
-                        VStack(spacing: 5) {
-                            Text(track.title)
-                                .font(.title2.weight(.bold))
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                            Text(track.artist)
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            if !track.album.isEmpty {
-                                Text(track.album)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
-                            playbackStatus(track)
-                        }
-
-                        Spacer(minLength: 10)
+                        Spacer().frame(height: 10)
                         progress
-                        Spacer(minLength: 10)
+                        Spacer().frame(height: 14)
                         controls
-                        Spacer(minLength: 10)
+                        Spacer().frame(height: 14)
                         secondaryControls(track)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 10)
-                    .modifier(AccessiblePlayerScroll(enabled: dynamicTypeSize.isAccessibilitySize))
+                    .modifier(AccessiblePlayerScroll(enabled: dynamicTypeSize.isAccessibilitySize && !showingLyrics))
                 }
             }
             .background(playerBackground)
@@ -191,6 +198,7 @@ struct FullPlayerView: View {
                 set: { model.playback.seek(to: $0) }
             ), in: 0...max(model.playback.duration, 1), onEditingChanged: { isSeeking = $0 })
             .tint(.primary)
+            .accessibilityIdentifier("player.progress")
             HStack {
                 Text(time(model.playback.position))
                 Spacer()
@@ -230,6 +238,7 @@ struct FullPlayerView: View {
             PlayerIconButton(icon: showingLyrics ? "photo" : "quote.bubble", label: showingLyrics ? "显示封面" : "显示歌词") {
                 withAnimation(.snappy(duration: 0.32)) { showingLyrics.toggle() }
             }
+            .accessibilityIdentifier("player.lyricsToggle")
             Spacer()
             PlayerIconButton(
                 icon: model.playback.mode.symbol,
@@ -390,7 +399,6 @@ private struct PlayerLyricsView: View {
     let document: LyricDocument
     let loading: Bool
     let position: TimeInterval
-    let size: CGFloat
     let onTap: () -> Void
 
     private var activeLineID: Int? {
@@ -398,12 +406,8 @@ private struct PlayerLyricsView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
-            Color.orange.opacity(0.06)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
             if loading {
                 ProgressView()
                     .tint(.orange)
@@ -423,7 +427,7 @@ private struct PlayerLyricsView: View {
                 ScrollViewReader { reader in
                     ScrollView {
                         LazyVStack(spacing: 18) {
-                            Spacer().frame(height: size * 0.34)
+                            Spacer().frame(height: geometry.size.height / 2)
                             ForEach(Array(document.lines.enumerated()), id: \.element.id) { index, line in
                                 let isActive = line.id == activeLineID
                                 Text(line.text)
@@ -436,9 +440,9 @@ private struct PlayerLyricsView: View {
                                     .animation(.easeInOut(duration: 0.25), value: activeLineID)
                                     .id(line.id)
                             }
-                            Spacer().frame(height: size * 0.34)
+                            Spacer().frame(height: geometry.size.height / 2)
                         }
-                        .padding(.horizontal, 18)
+                        .padding(.horizontal, 4)
                     }
                     .scrollIndicators(.hidden)
                     .mask {
@@ -462,15 +466,10 @@ private struct PlayerLyricsView: View {
                 }
             }
         }
-        .frame(width: size, height: size)
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.primary.opacity(0.06), lineWidth: 0.5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("显示封面")
     }
 
     private func lineOpacity(at index: Int) -> Double {

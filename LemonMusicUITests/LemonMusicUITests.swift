@@ -1,6 +1,31 @@
 import XCTest
 
 final class LemonMusicUITests: XCTestCase {
+    func testLyricsFillAreaAboveProgressAndHideTrackMetadata() {
+        let app = fixtures()
+        for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
+        app.staticTexts["我的精选"].tap()
+        app.buttons["collection.playAll"].tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.buttons["miniPlayer.open"].tap()
+        let toggle = app.buttons["player.lyricsToggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        let lyrics = app.descendants(matching: .any).matching(identifier: "player.lyrics").firstMatch
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "player.trackInfo").firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "player.cacheStatus").firstMatch.exists)
+        let progress = app.sliders["player.progress"]
+        XCTAssertTrue(progress.exists)
+        XCTAssertGreaterThan(lyrics.frame.height, 400)
+        XCTAssertGreaterThan(lyrics.frame.width, app.frame.width * 0.8)
+        XCTAssertLessThanOrEqual(lyrics.frame.maxY, progress.frame.minY + 2)
+        attachment(app, name: "lyrics-full-area")
+        toggle.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "player.trackInfo").firstMatch.waitForExistence(timeout: 3))
+        app.buttons["player.close"].tap()
+    }
+
     func testCollectionActionsSearchAndPlaybackModes() {
         let app = fixtures()
         for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
