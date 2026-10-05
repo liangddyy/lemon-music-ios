@@ -62,7 +62,7 @@ struct CollectionDetailView: View {
         .listStyle(.plain)
         .navigationTitle(source.title)
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $search, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索此列表")
+        .modifier(CollectionSearchPresentation(query: $search, isPresented: $searching))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("搜索", systemImage: "magnifyingglass") { searching = true }
@@ -206,6 +206,22 @@ struct CollectionDetailView: View {
             complete = true
         } catch is CancellationError {
         } catch { errorMessage = error.localizedDescription }
+    }
+}
+
+private struct CollectionSearchPresentation: ViewModifier {
+    @Binding var query: String
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        if isPresented {
+            content.searchable(
+                text: $query, isPresented: $isPresented,
+                placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索此列表"
+            )
+        } else {
+            content
+        }
     }
 }
 

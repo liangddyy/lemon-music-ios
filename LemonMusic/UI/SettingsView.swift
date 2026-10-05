@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmingCacheClear = false
+    @State private var usedCacheBytes: Int64 = 0
+    @State private var cacheClearMessage: String?
 
     var body: some View {
         Form {
@@ -29,12 +32,26 @@ struct SettingsView: View {
             Section("音频缓存") {
                 Picker("缓存上限", selection: Binding(
                     get: { model.audioCache.maxBytes },
-                    set: { model.audioCache.maxBytes = $0; model.audioCache.enforceLimit(protectedKey: model.playback.currentTrack?.id) }
+                    set: {
+                        model.audioCache.maxBytes = $0
+                        model.audioCache.enforceLimit(protectedKey: model.playback.currentTrack?.id)
+                        refreshCacheUsage()
+                    }
                 )) {
                     ForEach(AudioCache.sizeOptions, id: \.self) { Text(formatBytes($0)).tag($0) }
                 }
-                LabeledContent("已使用", value: formatBytes(model.audioCache.usedBytes()))
-                Button("清空音频缓存", role: .destructive) { model.clearAudioCache() }
+                LabeledContent("已使用") {
+                    Text(formatBytes(usedCacheBytes))
+                        .accessibilityIdentifier("settings.audioCacheUsed")
+                }
+                Button("清空音频缓存", role: .destructive) { confirmingCacheClear = true }
+                    .accessibilityIdentifier("settings.clearAudioCache")
+                if let cacheClearMessage {
+                    Label(cacheClearMessage, systemImage: usedCacheBytes == 0 ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(usedCacheBytes == 0 ? Color.green : Color.orange)
+                        .accessibilityIdentifier("settings.cacheClearResult")
+                }
             }
 
             Section("资料与封面") {
@@ -57,6 +74,21 @@ struct SettingsView: View {
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("完成") { dismiss() } }
+        .onAppear { refreshCacheUsage() }
+        .alert("清空音频缓存？", isPresented: $confirmingCacheClear) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) {
+                model.clearAudioCache()
+                refreshCacheUsage()
+                cacheClearMessage = usedCacheBytes == 0 ? "音频缓存已清空" : "部分缓存未能清理，请重试"
+            }
+        } message: {
+            Text("仅清除本机音频缓存，并取消未完成的本机缓存任务。不会删除 NAS 上的歌曲，再次播放可能需要联网。")
+        }
+    }
+
+    private func refreshCacheUsage() {
+        usedCacheBytes = model.audioCache.usedBytes()
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

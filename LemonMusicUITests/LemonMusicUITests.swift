@@ -1,6 +1,34 @@
 import XCTest
 
 final class LemonMusicUITests: XCTestCase {
+    func testCacheClearRequiresConfirmationAndRefreshesUsage() {
+        let app = fixtures()
+        app.buttons["设置"].tap()
+        let clear = app.buttons["settings.clearAudioCache"]
+        for _ in 0..<3 where !clear.isHittable { app.swipeUp() }
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        let usage = app.staticTexts["settings.audioCacheUsed"]
+        XCTAssertTrue(usage.exists)
+        let originalUsage = usage.label
+        XCTAssertFalse(originalUsage.hasSuffix(ByteCountFormatter.string(fromByteCount: 0, countStyle: .file)))
+        clear.tap()
+        XCTAssertTrue(app.alerts["清空音频缓存？"].waitForExistence(timeout: 3))
+        app.alerts.buttons["取消"].tap()
+        XCTAssertEqual(usage.label, originalUsage)
+        XCTAssertFalse(app.staticTexts["settings.cacheClearResult"].exists)
+        clear.tap()
+        app.alerts.buttons["清空"].tap()
+        let zeroUsage = NSPredicate(format: "label ENDSWITH %@", ByteCountFormatter.string(fromByteCount: 0, countStyle: .file))
+        expectation(for: zeroUsage, evaluatedWith: usage)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.staticTexts["音频缓存已清空"].exists)
+        attachment(app, name: "cache-cleared-refreshed")
+        app.buttons["完成"].tap()
+        app.buttons["设置"].tap()
+        for _ in 0..<3 where !usage.isHittable { app.swipeUp() }
+        XCTAssertTrue(usage.label.hasSuffix(ByteCountFormatter.string(fromByteCount: 0, countStyle: .file)))
+    }
+
     func testRestoredMiniPlayerActuallyPlaysAfterAppRelaunch() {
         let app = fixtures(extra: ["-uiTestingPersistentPlayback", "-uiTestingResetPlayback"])
         for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
@@ -78,6 +106,7 @@ final class LemonMusicUITests: XCTestCase {
         XCTAssertTrue(app.buttons["collection.nas"].isHittable)
         XCTAssertTrue(app.buttons["collection.cache"].isHittable)
         XCTAssertFalse(app.buttons["collection.favorite"].exists)
+        XCTAssertFalse(app.searchFields.firstMatch.exists)
         attachment(app, name: "collection-light")
         app.buttons["collection.search"].tap()
         let search = app.searchFields.firstMatch
@@ -88,6 +117,9 @@ final class LemonMusicUITests: XCTestCase {
         let closeSearch = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "Cancel", "取消", "关闭"])).firstMatch
         XCTAssertTrue(closeSearch.waitForExistence(timeout: 3))
         closeSearch.tap()
+        XCTAssertFalse(app.searchFields.firstMatch.exists)
+        XCTAssertTrue(app.buttons["track.play.local:/fixtures/0.wav"].exists)
+        XCTAssertTrue(app.buttons["track.play.local:/fixtures/1.wav"].exists)
         app.buttons["collection.playAll"].tap()
         let miniPlayer = app.buttons["miniPlayer.open"]
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
