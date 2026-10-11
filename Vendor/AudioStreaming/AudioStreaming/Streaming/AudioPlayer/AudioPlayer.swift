@@ -424,7 +424,7 @@ open class AudioPlayer {
             self.playerContext.audioReadingEntry?.delegate = nil
             self.playerContext.audioReadingEntry?.close()
             if let playingEntry = self.playerContext.audioPlayingEntry {
-                self.processFinishPlaying(entry: playingEntry, with: nil)
+                self.processFinishPlaying(entry: playingEntry, with: nil, reason: .userAction)
             }
 
             if clearQueue {
@@ -614,7 +614,7 @@ open class AudioPlayer {
                         self.handleLoopingIfNeeded(for: entry)
                     }
                 } else {
-                    self.processFinishPlaying(entry: entry, with: nextEntry)
+                    self.processFinishPlaying(entry: entry, with: nextEntry, reason: .eof)
                 }
             }
             self.sourceQueue.async {
@@ -822,14 +822,16 @@ open class AudioPlayer {
             if shouldClearQueue {
                 clearQueue()
             }
-            processFinishPlaying(entry: playerContext.audioPlayingEntry, with: entry)
+            processFinishPlaying(entry: playerContext.audioPlayingEntry, with: entry, reason: .userAction)
             startPlayer(resetBuffers: true)
         } else {
             entriesQueue.enqueue(item: entry, type: .buffering)
         }
     }
 
-    private func processFinishPlaying(entry: AudioEntry?, with nextEntry: AudioEntry?) {
+    private func processFinishPlaying(
+        entry: AudioEntry?, with nextEntry: AudioEntry?, reason: AudioPlayerStopReason
+    ) {
         let playingEntry = playerContext.entriesLock.withLock { playerContext.audioPlayingEntry }
         guard entry == playingEntry else { 
             return 
@@ -870,13 +872,12 @@ open class AudioPlayer {
                 let progressInFrames = entry.progressInFrames()
                 let progress = Double(progressInFrames) / outputAudioFormat.basicStreamDescription.mSampleRate
                 let duration = entry.duration()
-                let finishReason: AudioPlayerStopReason = .userAction
                 asyncOnMain { [weak self] in
                     guard let self else { return }
                     self.delegate?.audioPlayerDidFinishPlaying(
                         player: self,
                         entryId: entryId,
-                        stopReason: finishReason,
+                        stopReason: reason,
                         progress: progress,
                         duration: duration
                     )
@@ -921,8 +922,7 @@ open class AudioPlayer {
                 let progressInFrames = entry.progressInFrames()
                 let progress = Double(progressInFrames) / outputAudioFormat.basicStreamDescription.mSampleRate
                 let duration = entry.duration()
-                let finishReason = self.stopReason
-
+                // EOF is known by the renderer before processSource updates the engine's stop reason.
                 sourceQueue.async { [weak self] in
                     guard let self else { return }
                     self.processSource()
@@ -930,7 +930,7 @@ open class AudioPlayer {
                         self.delegate?.audioPlayerDidFinishPlaying(
                             player: self,
                             entryId: entryId,
-                            stopReason: finishReason,
+                            stopReason: reason,
                             progress: progress,
                             duration: duration
                         )
@@ -989,17 +989,17 @@ open class AudioPlayer {
         
         switch loopMode {
         case .off:
-            processFinishPlaying(entry: entry, with: nil)
+            processFinishPlaying(entry: entry, with: nil, reason: .eof)
             
         case .single(let times):
             // Check if we've reached the loop count limit
             if let maxLoops = times, maxLoops > 0, currentLoopIteration >= maxLoops {
-                processFinishPlaying(entry: entry, with: nil)
+                processFinishPlaying(entry: entry, with: nil, reason: .eof)
                 return
             }
 
             guard let url = URL(string: entry.id.id) else {
-                processFinishPlaying(entry: entry, with: nil)
+                processFinishPlaying(entry: entry, with: nil, reason: .eof)
                 return
             }
             
@@ -1016,7 +1016,7 @@ open class AudioPlayer {
             if entriesQueue.count(for: .upcoming) == 0 && entriesQueue.count(for: .buffering) == 0 {
                 // Check if we've reached the loop count limit
                 if let maxLoops = times, maxLoops > 0, currentLoopIteration >= maxLoops {
-                    processFinishPlaying(entry: entry, with: nil)
+                    processFinishPlaying(entry: entry, with: nil, reason: .eof)
                     return
                 }
                 

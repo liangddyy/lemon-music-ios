@@ -2,6 +2,14 @@
 
 柠檬音乐的原生 iPhone 客户端，直接连接 Lemon Music 官方 FPK 提供的 `/api/v1`。
 
+## 界面预览
+
+| 首页 | 在线发现 | 播放器 |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/01-home.png" alt="柠檬音乐首页" width="240"> | <img src="docs/screenshots/03-discover.png" alt="在线音源、排行榜与新歌" width="240"> | <img src="docs/screenshots/05-player.png" alt="封面与播放控制" width="240"> |
+
+[查看完整图文展示](docs/SHOWCASE.md)，包含音乐库、榜单详情、歌词、搜索、NAS 下载选项与深色模式。
+
 ## 功能
 
 - 本地音乐库：歌曲、专辑、歌手、流派和自定义歌单

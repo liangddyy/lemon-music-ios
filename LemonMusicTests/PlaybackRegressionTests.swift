@@ -159,9 +159,52 @@ struct PlaybackRegressionTests {
         #expect(player.isPlaying)
     }
 
-    private func silentWAV() -> Data {
+    @MainActor @Test(arguments: [PlaybackMode.sequential, .shuffled, .repeatOne])
+    func naturalEndAdvancesOrRepeatsAndStartsAudio(mode: PlaybackMode) async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = "natural-end-tests.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let player = PlaybackController(
+            api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults
+        )
+        let first = try track(id: UUID().uuidString, title: "First", artist: "Artist", duration: 2)
+        let second = try track(id: UUID().uuidString, title: "Second", artist: "Artist", duration: 20)
+        defer {
+            player.stop()
+            defaults.removePersistentDomain(forName: name)
+            try? FileManager.default.removeItem(at: root)
+        }
+        for song in [first, second] {
+            let file = root.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+            try silentWAV(seconds: UInt32(song.duration)).write(to: file)
+            _ = try cache.storeDownloadedFile(at: file, key: song.id, mimeType: "audio/wav", protectedKey: nil)
+        }
+        var startedTracks: [String] = []
+        player.onTrackChanged = {
+            if let id = player.currentTrack?.id { startedTracks.append(id) }
+        }
+        player.setMode(mode)
+        await player.play(first, in: [first, second])
+        for _ in 0..<200 where startedTracks.count < 2 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let expected = mode == .repeatOne ? first : second
+        #expect(Array(startedTracks.prefix(2)) == [first.id, expected.id])
+        #expect(player.currentTrack?.id == expected.id)
+        for _ in 0..<100 where !player.isPlaying || player.isLoadingTrack || player.position == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(player.isPlaying)
+        #expect(player.position > 0)
+        #expect(player.lastError == nil)
+        #expect(player.currentIndex == (mode == .repeatOne ? 0 : 1))
+    }
+
+    private func silentWAV(seconds: UInt32 = 20) -> Data {
         let sampleRate: UInt32 = 44_100
-        let byteCount = sampleRate * 2 * 20
+        let byteCount = sampleRate * 2 * seconds
         var data = Data("RIFF".utf8)
         append(byteCount + 36, to: &data)
         data.append(Data("WAVEfmt ".utf8))
