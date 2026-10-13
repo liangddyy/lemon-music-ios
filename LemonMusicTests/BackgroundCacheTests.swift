@@ -3,10 +3,12 @@ import XCTest
 @testable import LemonMusic
 
 final class BackgroundCacheTests: XCTestCase {
+    private typealias Environment = (coordinator: CollectionCacheCoordinator, cache: AudioCache, root: URL)
     @MainActor func testDownloadsThroughRealBackgroundSessionAndCoalescesAcrossCollections() async throws {
         try await requireFixture()
         let environment = try await makeEnvironment()
-        defer { environment.coordinator.reset(); try? FileManager.default.removeItem(at: environment.root) }
+        defer { cleanup(environment) }
+        environment.cache.automaticCachingEnabled = false
         let track = try song()
         environment.coordinator.start(key: "one", title: "One", tracks: [track], allowsCellular: true)
         environment.coordinator.start(key: "two", title: "Two", tracks: [track], allowsCellular: true)
@@ -26,7 +28,7 @@ final class BackgroundCacheTests: XCTestCase {
     @MainActor func testWiFiConsentAndCancellationPreventLateCacheWrites() async throws {
         try await requireFixture()
         let environment = try await makeEnvironment()
-        defer { environment.coordinator.reset(); try? FileManager.default.removeItem(at: environment.root) }
+        defer { cleanup(environment) }
         let track = try song()
         environment.coordinator.networkChanged(connected: true, cellular: true)
         environment.coordinator.start(key: "one", title: "One", tracks: [track], allowsCellular: false)
@@ -47,7 +49,7 @@ final class BackgroundCacheTests: XCTestCase {
     @MainActor func testPlaybackTakesOverTransferAndStreamingCompletionFinishesBatch() async throws {
         try await requireFixture()
         let environment = try await makeEnvironment()
-        defer { environment.coordinator.reset(); try? FileManager.default.removeItem(at: environment.root) }
+        defer { cleanup(environment) }
         let track = try song()
         environment.coordinator.start(key: "one", title: "One", tracks: [track], allowsCellular: true)
         for _ in 0..<50 where environment.coordinator.batches["one"]?.items.first?.taskID == nil {
@@ -69,7 +71,7 @@ final class BackgroundCacheTests: XCTestCase {
     @MainActor func testPausedBackgroundTransferResumes() async throws {
         try await requireFixture()
         let environment = try await makeEnvironment()
-        defer { environment.coordinator.reset(); try? FileManager.default.removeItem(at: environment.root) }
+        defer { cleanup(environment) }
         let track = try song()
         environment.coordinator.start(key: "one", title: "One", tracks: [track], allowsCellular: true)
         for _ in 0..<100 where (environment.coordinator.batches["one"]?.items.first?.progress ?? 0) == 0 {
@@ -101,10 +103,17 @@ final class BackgroundCacheTests: XCTestCase {
         }
     }
 
-    @MainActor private func makeEnvironment() async throws -> (coordinator: CollectionCacheCoordinator, cache: AudioCache, root: URL) {
+    @MainActor private func cleanup(_ environment: Environment) {
+        environment.coordinator.reset()
+        UserDefaults.standard.removePersistentDomain(forName: "lemon.cache-tests.\(environment.root.lastPathComponent)")
+        try? FileManager.default.removeItem(at: environment.root)
+    }
+
+    @MainActor private func makeEnvironment() async throws -> Environment {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = try CacheStore(inMemory: true)
-        let cache = AudioCache(container: store.container, root: root)
+        let defaults = UserDefaults(suiteName: "lemon.cache-tests.\(root.lastPathComponent)")!
+        let cache = AudioCache(container: store.container, root: root, defaults: defaults)
         let api = LemonAPIClient()
         try await api.configure(baseURL: "http://127.0.0.1:18763", token: nil)
         let coordinator = CollectionCacheCoordinator(

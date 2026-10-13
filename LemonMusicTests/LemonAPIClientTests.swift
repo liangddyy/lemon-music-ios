@@ -1,9 +1,76 @@
 import Foundation
 import Testing
+import UIKit
 @testable import LemonMusic
 
 @Suite(.serialized)
 struct LemonAPIClientTests {
+    @Test func followsServerTranscodeSettingAndCapsOnlineQuality() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        URLProtocolStub.handler = { request in
+            if request.url?.path.hasSuffix("/settings") == true {
+                _ = log.record("settings")
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"player.playQuality":"flac","player.smoothStream":"true"}"#.utf8))
+            }
+            let body = try #require(JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any])
+            if body["filePath"] != nil { #expect(body["smooth"] as? Bool == true) }
+            else { #expect(body["quality"] as? String == "128k") }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"url":"/api/play/local-smooth?ticket=test"}"#.utf8))
+        }
+        let settings = try await client.serverPlaybackSettings()
+        #expect(settings.smooth)
+        let local = try #require(MusicTrack(json: .object(["filePath": .string("/music/song.flac")])))
+        _ = try await client.resolvePlayURL(for: local, smooth: settings.smooth)
+        let online = try #require(MusicTrack(json: .object(["songId": .string("1"), "source": .string("wy")])))
+        _ = try await client.resolvePlayURL(for: online)
+        #expect(log.count("settings") == 1)
+    }
+
+    @MainActor @Test func coverUsesAuthenticatedProxyWhenCDNRejectsDirectRequest() async throws {
+        let client = try await stubClient()
+        let log = RequestLog()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let bytes = try #require(image.pngData())
+        URLProtocolStub.handler = { request in
+            if request.url?.host == "cdn.example.com" {
+                #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+                _ = log.record("cdn")
+                return (HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            #expect(request.url?.path == "/api/v1/play/cover-img")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer jwt")
+            _ = log.record("proxy")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, bytes)
+        }
+        let track = try #require(MusicTrack(json: .object([
+            "source": .string("wy"), "songId": .string("1"), "picUrl": .string("https://cdn.example.com/cover.jpg"),
+        ])))
+        #expect(try await client.coverData(for: track) == bytes)
+        #expect(log.count("cdn") == 1)
+        #expect(log.count("proxy") == 1)
+    }
+
+    @MainActor @Test func missingCoverIsResolvedAndHTMLIsNeverAcceptedAsImage() async throws {
+        let client = try await stubClient()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let bytes = try #require(image.pngData())
+        URLProtocolStub.handler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if request.url?.path.hasSuffix("/play/cover") == true {
+                return (response, Data(#"{"url":"https://cdn.example.com/found.png"}"#.utf8))
+            }
+            return (response, request.url?.path == "/found.png" ? bytes : Data("<html>error</html>".utf8))
+        }
+        let track = try #require(MusicTrack(json: .object(["source": .string("wy"), "songId": .string("1")])))
+        #expect(try await client.coverData(for: track) == bytes)
+        #expect(await client.remoteCoverData("https://cdn.example.com/error") == nil)
+    }
+
     @Test func followsServerQualityUnlessCellularOverrideIsProvided() async throws {
         let client = try await stubClient()
         let log = RequestLog()

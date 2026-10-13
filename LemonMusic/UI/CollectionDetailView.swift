@@ -225,7 +225,7 @@ private struct CollectionSearchPresentation: ViewModifier {
     }
 }
 
-private struct NASDownloadOptions: View {
+struct NASDownloadOptions: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let key: String
@@ -262,7 +262,7 @@ private struct NASDownloadOptions: View {
     }
 }
 
-private struct CollectionTasksSheet: View {
+struct CollectionTasksSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let collectionKey: String
@@ -295,6 +295,74 @@ private struct CollectionTasksSheet: View {
                 }
             }
         }
+    }
+}
+
+struct TrackDownloadSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let track: MusicTrack
+    @State private var confirmingCellular = false
+    @State private var sheet: Sheet?
+    private enum Sheet: String, Identifiable {
+        case nas, tasks
+        var id: Self { self }
+    }
+    private var key: String { "track:\(track.id)" }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("歌曲", value: track.title)
+                    LabeledContent("歌手", value: track.artist)
+                }
+                Section("下载到 NAS") {
+                    Button("选择音质", systemImage: "externaldrive.badge.plus") { sheet = .nas }
+                        .disabled(track.locator.kind == .local || model.sessionState == .offline)
+                        .accessibilityIdentifier("download.nas")
+                    if track.locator.kind == .local {
+                        Label("已在 NAS 音乐库", systemImage: "checkmark.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("缓存到手机") {
+                    Button("缓存此歌曲", systemImage: "iphone.and.arrow.forward") {
+                        if model.collectionCache.isCellular { confirmingCellular = true }
+                        else { startCache(allowsCellular: false) }
+                    }
+                    .disabled(model.sessionState == .offline)
+                    .accessibilityIdentifier("download.cache")
+                    if let batch = model.collectionCache.batches[key] {
+                        Text(batch.summary).foregroundStyle(.secondary)
+                    }
+                }
+                if model.collectionCache.batches[key] != nil || model.nasDownloads.batches[key] != nil {
+                    Section {
+                        Button("任务状态", systemImage: "list.bullet") { sheet = .tasks }
+                            .accessibilityIdentifier("download.tasks")
+                    }
+                }
+            }
+            .navigationTitle("下载")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .sheet(item: $sheet) { value in
+                switch value {
+                case .nas: NASDownloadOptions(key: key, title: track.title, tracks: [track])
+                case .tasks: CollectionTasksSheet(collectionKey: key)
+                }
+            }
+            .confirmationDialog("使用蜂窝流量缓存此歌曲？", isPresented: $confirmingCellular, titleVisibility: .visible) {
+                Button("使用蜂窝流量") { startCache(allowsCellular: true) }
+                Button("等待 Wi-Fi") { startCache(allowsCellular: false) }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func startCache(allowsCellular: Bool) {
+        model.collectionCache.start(key: key, title: track.title, tracks: [track], allowsCellular: allowsCellular)
     }
 }
 

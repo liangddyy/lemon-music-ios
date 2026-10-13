@@ -132,7 +132,7 @@ nonisolated struct MusicTrack: Identifiable, Codable, Sendable, Hashable {
         self.artistID = object.firstString("artistId", "artistID", "singerId")
         self.duration = object.firstDouble("duration", "interval", "durationSeconds")
             ?? Self.parseDuration(object.firstString("interval", "duration") ?? "")
-        self.artworkURL = object.firstString("picUrl", "img", "cover", "coverUrl", "artworkURL")
+        self.artworkURL = object.firstString("picUrl", "img", "cover", "coverUrl", "coverImgUrl", "artworkURL")
         self.format = object.firstString("format", "suffix", "type")
         self.genre = object.firstString("genre")
         self.modifiedAt = object.firstDouble("mtime", "modifiedAt", "savedAt")

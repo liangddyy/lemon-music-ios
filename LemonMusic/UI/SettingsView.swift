@@ -23,23 +23,35 @@ struct SettingsView: View {
                     set: { model.audioPolicy.dataSaverEnabled = $0 }
                 ))
                 .accessibilityIdentifier("settings.dataSaver")
+                LabeledContent(
+                    "本地转码",
+                    value: model.audioPolicy.serverSettings.smooth ? "跟随服务器 · AAC" : "跟随服务器 · 原音质"
+                )
+                .accessibilityIdentifier("settings.serverTranscode")
             } header: {
                 Text("网络与音质")
             } footer: {
-                Text("默认开启。蜂窝网络下，在线音源的播放和新缓存请求使用 128K；关闭后及 Wi-Fi 下遵循服务器播放音质设置。已有本机缓存直接复用，NAS 本地歌曲仍按原码率传输。正在播放的歌曲不会中断，下一次在线加载生效。")
+                Text("蜂窝网络下优先请求 128K 在线音质。本地歌曲遵循服务器转码设置；开启转码时，可转码的无损歌曲使用 AAC，在线音质使用 128K。下一次加载生效。")
             }
 
             Section("音频缓存") {
+                Toggle("自动缓存播放的歌曲", isOn: Binding(
+                    get: { model.audioCache.automaticCachingEnabled },
+                    set: { model.audioCache.automaticCachingEnabled = $0 }
+                ))
+                .accessibilityIdentifier("settings.automaticCache")
                 Picker("缓存上限", selection: Binding(
                     get: { model.audioCache.maxBytes },
                     set: {
+                        model.collectionCache.prepareForLimitChange(to: $0)
                         model.audioCache.maxBytes = $0
-                        model.audioCache.enforceLimit(protectedKey: model.playback.currentTrack?.id)
                         refreshCacheUsage()
                     }
                 )) {
-                    ForEach(AudioCache.sizeOptions, id: \.self) { Text(formatBytes($0)).tag($0) }
+                    ForEach(AudioCache.sizeOptions, id: \.self) { Text(AudioCache.sizeTitle($0)).tag($0) }
                 }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("settings.cacheLimit")
                 LabeledContent("已使用") {
                     Text(formatBytes(usedCacheBytes))
                         .accessibilityIdentifier("settings.audioCacheUsed")
@@ -52,6 +64,13 @@ struct SettingsView: View {
                         .foregroundStyle(usedCacheBytes == 0 ? Color.green : Color.orange)
                         .accessibilityIdentifier("settings.cacheClearResult")
                 }
+            }
+
+            Section("显示") {
+                Toggle("紧凑显示", isOn: Binding(
+                    get: { model.compactDisplay }, set: { model.compactDisplay = $0 }
+                ))
+                .accessibilityIdentifier("settings.compactDisplay")
             }
 
             Section("资料与封面") {
@@ -75,6 +94,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("完成") { dismiss() } }
         .onAppear { refreshCacheUsage() }
+        .task { await model.refreshPlaybackSettings(force: true) }
         .alert("清空音频缓存？", isPresented: $confirmingCacheClear) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive) {

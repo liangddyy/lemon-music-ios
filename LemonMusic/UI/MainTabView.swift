@@ -11,7 +11,12 @@ struct MainTabView: View {
 
     var body: some View {
         Group {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.1, *) {
+                tabs
+                    .tabViewBottomAccessory(isEnabled: model.playback.currentTrack != nil) {
+                        TabBarMiniPlayer(showingPlayer: $showingPlayer)
+                    }
+            } else if #available(iOS 26.0, *) {
                 tabs
                     .tabViewBottomAccessory {
                         if model.playback.currentTrack != nil {
@@ -20,13 +25,6 @@ struct MainTabView: View {
                     }
             } else {
                 tabs
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        if model.playback.currentTrack != nil {
-                            MiniPlayerView(showingPlayer: $showingPlayer, presentation: .legacy)
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 4)
-                        }
-                    }
             }
         }
         .fullScreenCover(isPresented: $showingPlayer) {
@@ -72,15 +70,40 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             Tab("首页", systemImage: "house.fill", value: AppTab.home) {
                 NavigationStack { HomeView() }
+                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
             }
             Tab("发现", systemImage: "sparkles", value: AppTab.discover) {
                 NavigationStack { DiscoverView() }
+                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
             }
             Tab("音乐库", systemImage: "music.note.list", value: AppTab.library) {
                 NavigationStack { LibraryView() }
+                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
             }
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack { SearchView() }
+                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
+            }
+        }
+    }
+}
+
+private struct LegacyMiniPlayerInset: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Binding var showingPlayer: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+        } else {
+            // Tab content's safe area ends above the tab bar; TabView's does not.
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                if model.playback.currentTrack != nil {
+                    MiniPlayerView(showingPlayer: $showingPlayer, presentation: .legacy)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
+                        .padding(.bottom, 4)
+                }
             }
         }
     }

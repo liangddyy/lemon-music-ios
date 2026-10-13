@@ -27,6 +27,7 @@ struct LibraryView: View {
             content
         }
         .navigationTitle("音乐库")
+        .navigationBarTitleDisplayMode(model.compactDisplay ? .inline : .large)
         .refreshable { await model.refreshAll(force: true) }
     }
 

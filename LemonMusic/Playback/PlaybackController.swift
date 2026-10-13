@@ -38,7 +38,7 @@ final class PlaybackController {
     var willPlayTrack: ((MusicTrack) async -> Void)?
     var onTrackChanged: (() -> Void)?
 
-    private nonisolated(unsafe) let player: AudioPlayer
+    @ObservationIgnored private nonisolated(unsafe) var player: AudioPlayer
     private let playerDelegate: LemonAudioPlayerDelegate
     private let api: LemonAPIClient
     private let audioCache: AudioCache
@@ -54,11 +54,18 @@ final class PlaybackController {
     private var playbackRequest = PlaybackRequestState()
     private(set) var isLoadingTrack = false
     private(set) var isBuffering = false
+    private(set) var isAudioInterrupted = false
+    private(set) var canSeek = false
+    private var wantsPlayback = false
+    private var resumeAfterInterruption = false
+    @ObservationIgnored private nonisolated(unsafe) var sessionObservers: [NSObjectProtocol] = []
     private var engineHasEntry = false
     private var pendingSeek: TimeInterval?
+    private var seekTarget: TimeInterval?
     private var currentAudioKey: String?
     private var startupWatchdog: Task<Void, Never>?
     private var lastPositionSave = Date.distantPast
+    private var artworkTask: Task<Void, Never>?
 
     init(
         api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore,
@@ -72,15 +79,7 @@ final class PlaybackController {
         self.audioPolicy = audioPolicy
         self.startupTimeout = startupTimeout
 
-        let configuration = AudioPlayerConfiguration(
-            flushQueueOnSeek: true,
-            bufferSizeInSeconds: 20,
-            secondsRequiredToStartPlaying: 1,
-            gracePeriodAfterSeekInSeconds: 0.5,
-            secondsRequiredToStartPlayingAfterBufferUnderrun: 1,
-            enableLogs: false
-        )
-        let player = AudioPlayer(configuration: configuration, streamCache: audioCache.streamCache)
+        let player = Self.makePlayer(cache: audioCache)
         let delegate = LemonAudioPlayerDelegate()
         self.player = player
         self.playerDelegate = delegate
@@ -97,6 +96,7 @@ final class PlaybackController {
         }
 
         configureAudioSession()
+        observeAudioSession()
         configureRemoteCommands()
         restoreQueue()
         startProgressLoop()
@@ -117,6 +117,8 @@ final class PlaybackController {
     }
 
     func pause() {
+        wantsPlayback = false
+        resumeAfterInterruption = false
         player.pause()
         isPlaying = false
         isBuffering = false
@@ -126,14 +128,22 @@ final class PlaybackController {
     }
 
     func stop() {
+        artworkTask?.cancel()
+        if let currentTrack { artworkStore.cancelLoad(for: currentTrack) }
+        wantsPlayback = false
+        resumeAfterInterruption = false
+        canSeek = false
         startupWatchdog?.cancel()
         engineHasEntry = false
         pendingSeek = nil
+        seekTarget = nil
         isLoadingTrack = false
         isBuffering = false
         player.stop()
         playbackRequest = PlaybackRequestState()
         audioCache.playingKey = nil
+        currentAudioKey = nil
+        audioCache.enforceLimit()
         isPlaying = false
         currentTrack = nil
         queueState = PlaybackQueue()
@@ -144,16 +154,20 @@ final class PlaybackController {
     }
 
     func resume() {
-        guard !isLoadingTrack else { return }
+        guard !isLoadingTrack, !isAudioInterrupted else { return }
         guard currentTrack != nil, !queue.isEmpty else {
             reportFailure("没有可播放的歌曲，请重新选择歌曲", code: "empty-queue")
             return
         }
-        if !engineHasEntry || lastError != nil || (duration > 0 && position >= duration - 0.5) {
-            let resumeAt = !engineHasEntry && lastError == nil ? position : 0
+        let stoppedEngine = !player.isEngineRunning && player.state != .paused
+        if !engineHasEntry || stoppedEngine || lastError != nil || (duration > 0 && position >= duration - 0.5) {
+            let resumeAt = lastError == nil && !(duration > 0 && position >= duration - 0.5) ? position : 0
             Task { await loadCurrentTrack(autoplay: true, forceRefresh: lastError != nil, resumeAt: resumeAt) }
             return
         }
+        do { try activateAudioSession() }
+        catch { reportFailure(error.localizedDescription, code: "session-resume"); return }
+        wantsPlayback = true
         player.resume()
         isPlaying = true
         updateNowPlaying()
@@ -171,12 +185,16 @@ final class PlaybackController {
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
-    func seek(to seconds: TimeInterval) {
-        guard player.isSeekable else { return }
-        player.seek(to: max(0, seconds))
-        position = max(0, seconds)
+    @discardableResult func seek(to seconds: TimeInterval) -> Bool {
+        guard !isAudioInterrupted, engineHasEntry, !isLoadingTrack, player.isSeekable,
+              player.isEngineRunning || player.state == .paused, seconds.isFinite else { return false }
+        let target = min(max(0, seconds), max(0, duration - 0.1))
+        player.seek(to: target)
+        seekTarget = target
+        position = target
         persistQueue()
         updateNowPlaying()
+        return true
     }
 
     func addToQueue(_ tracks: [MusicTrack]) {
@@ -207,7 +225,11 @@ final class PlaybackController {
     func cycleMode() { setMode(mode.next) }
 
     func audioCacheState(for track: MusicTrack) -> AudioCacheState {
-        if audioCache.availableCache(for: track, touching: false) != nil { return .cached }
+        if currentTrack?.id == track.id, let currentAudioKey, audioCache.cachedURL(for: currentAudioKey, touching: false) != nil {
+            return .cached
+        }
+        if currentTrack?.id != track.id, audioCache.availableCache(for: track, touching: false) != nil { return .cached }
+        if !audioCache.automaticCachingEnabled { return .notCached }
         return audioCacheStates[track.id] ?? .notCached
     }
 
@@ -216,20 +238,21 @@ final class PlaybackController {
     }
 
     func handlePlayerState(_ state: AudioPlayerState) {
-        guard engineHasEntry else { return }
-        isBuffering = state == .bufferring
-        isPlaying = state == .playing
+        guard engineHasEntry, state == player.state else { return }
+        isBuffering = !isAudioInterrupted && wantsPlayback && state == .bufferring
+        isPlaying = !isAudioInterrupted && wantsPlayback && state == .playing && player.isEngineRunning
         updateNowPlaying()
     }
 
     func handleNaturalEnd(playbackID: String) async {
+        guard !isAudioInterrupted, wantsPlayback else { return }
         guard playbackRequest.consumeEnd(for: playbackID) else { return }
         queueState.advance(natural: true)
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
     func handlePlaybackError(_ error: AudioPlayerError = .other) async {
-        guard !isLoadingTrack, playbackRequest.id != nil else { return }
+        guard !isAudioInterrupted, !isLoadingTrack, playbackRequest.id != nil else { return }
         let isInvalidAudio: Bool
         switch error {
         case .streamParseBytesFailure, .codecError, .dataNotFound: isInvalidAudio = true
@@ -255,6 +278,7 @@ final class PlaybackController {
 
     func handleStarted(playbackID: String) {
         guard playbackRequest.isCurrent(playbackID), engineHasEntry else { return }
+        guard !isAudioInterrupted, wantsPlayback else { player.pause(); return }
         startupWatchdog?.cancel()
         isBuffering = false
         isPlaying = true
@@ -270,6 +294,12 @@ final class PlaybackController {
     private func loadCurrentTrack(autoplay: Bool, forceRefresh: Bool, resumeAt: TimeInterval = 0) async {
         guard queue.indices.contains(currentIndex) else { return }
         let requestID = playbackRequest.begin()
+        currentAudioKey = nil
+        artworkTask?.cancel()
+        if let currentTrack { artworkStore.cancelLoad(for: currentTrack) }
+        wantsPlayback = autoplay
+        seekTarget = nil
+        canSeek = false
         isPlaying = false
         startupWatchdog?.cancel()
         engineHasEntry = false
@@ -283,7 +313,7 @@ final class PlaybackController {
         var track = await preferredTrack?(requestedTrack) ?? requestedTrack
         guard playbackRequest.isCurrent(requestID) else { return }
         audioCache.playingKey = track.id
-        await willPlayTrack?(track)
+        if audioCache.automaticCachingEnabled { await willPlayTrack?(track) }
         guard playbackRequest.isCurrent(requestID) else { return }
         currentTrack = track
         audioCache.playingKey = track.id
@@ -293,8 +323,26 @@ final class PlaybackController {
         currentPlaybackUsesPartialCache = false
 
         do {
-            try activateAudioSession()
-            if let cached = audioCache.availableCache(for: track) {
+            if !isAudioInterrupted { try activateAudioSession() }
+            var smooth = audioPolicy?.serverSettings.smooth ?? false
+            var cached = audioCache.availableCache(for: track, smooth: smooth)
+            if cached == nil, audioPolicy?.isConnected == false {
+                cached = audioCache.availableCache(for: track)
+                if cached == nil { throw URLError(.notConnectedToInternet) }
+            }
+            if cached == nil {
+                if let settings = try? await api.serverPlaybackSettings() {
+                    guard playbackRequest.isCurrent(requestID) else { return }
+                    audioPolicy?.applyServerSettings(settings)
+                    smooth = settings.smooth
+                    cached = audioCache.availableCache(for: track, smooth: smooth)
+                } else {
+                    // Offline replay may use any complete representation, but never mix partial variants.
+                    cached = audioCache.availableCache(for: track)
+                }
+            }
+            guard playbackRequest.isCurrent(requestID) else { return }
+            if let cached {
                 // Let the stream engine settle pending source changes during rapid cached selections.
                 try await Task.sleep(for: .milliseconds(20))
                 guard playbackRequest.isCurrent(requestID) else { return }
@@ -311,7 +359,7 @@ final class PlaybackController {
                     else { quality = try await api.serverPlayQuality() }
                 }
                 guard playbackRequest.isCurrent(requestID) else { return }
-                currentAudioKey = AudioVariant.key(for: track, quality: quality)
+                currentAudioKey = AudioVariant.key(for: track, quality: quality, smooth: smooth)
                 audioCache.playingKey = currentAudioKey
                 if let partial = audioCache.partialProgress(for: currentAudioKey!), partial.total > 0 {
                     audioCacheStates[track.id] = .caching(min(1, Double(partial.downloaded) / Double(partial.total)))
@@ -321,7 +369,7 @@ final class PlaybackController {
                 }
                 var streamURL: URL
                 do {
-                    streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh, quality: quality)
+                    streamURL = try await api.resolvePlayURL(for: track, refresh: forceRefresh, quality: quality, smooth: smooth)
                 } catch LemonAPIClient.APIError.server(let status, _) where
                     [400, 404, 410].contains(status)
                     && track.locator.kind == .local && requestedTrack.locator.kind == .online {
@@ -357,8 +405,9 @@ final class PlaybackController {
             duration = track.duration
             pendingSeek = resumeAt > 0 ? resumeAt : nil
             position = resumeAt
-            isPlaying = autoplay
-            if !autoplay { player.pause(); startupWatchdog?.cancel() }
+            let shouldPlay = autoplay && wantsPlayback && !isAudioInterrupted
+            isPlaying = shouldPlay
+            if !shouldPlay { player.pause(); startupWatchdog?.cancel() }
             updateNowPlaying()
             persistQueue()
         } catch {
@@ -383,10 +432,18 @@ final class PlaybackController {
                 guard self.engineHasEntry, !self.isLoadingTrack else { continue }
                 let progress = self.player.progress
                 let duration = self.player.duration
-                if self.pendingSeek == nil, progress.isFinite { self.position = max(0, progress) }
+                if !self.isAudioInterrupted, self.pendingSeek == nil, progress.isFinite {
+                    if let target = self.seekTarget, self.player.state != .paused, abs(progress - target) < 1 {
+                        self.seekTarget = nil
+                    }
+                    if self.seekTarget == nil { self.position = max(0, progress) }
+                }
                 if duration.isFinite, duration > 0 { self.duration = duration }
-                self.isPlaying = self.player.state == .playing
-                self.isBuffering = self.player.state == .bufferring
+                self.isPlaying = !self.isAudioInterrupted && self.wantsPlayback && self.player.state == .playing && self.player.isEngineRunning
+                self.isBuffering = !self.isAudioInterrupted && self.wantsPlayback && self.player.state == .bufferring
+                let seekable = !self.isAudioInterrupted && self.pendingSeek == nil && self.player.isSeekable
+                    && (self.player.isEngineRunning || self.player.state == .paused)
+                if self.canSeek != seekable { self.canSeek = seekable; self.updateNowPlaying() }
                 if self.pendingSeek != nil, self.player.state == .playing, self.player.isSeekable,
                    let playbackID = self.playbackRequest.id { self.handleStarted(playbackID: playbackID) }
                 if Date().timeIntervalSince(self.lastPositionSave) >= 5 {
@@ -403,6 +460,97 @@ final class PlaybackController {
         } catch {
             let failure = error as NSError
             logger.error("音频会话初始化失败，域=\(failure.domain, privacy: .public)，代码=\(failure.code)")
+        }
+    }
+
+    private static func makePlayer(cache: AudioCache) -> AudioPlayer {
+        AudioPlayer(configuration: AudioPlayerConfiguration(
+            flushQueueOnSeek: true, bufferSizeInSeconds: 20, secondsRequiredToStartPlaying: 1,
+            gracePeriodAfterSeekInSeconds: 0.5, secondsRequiredToStartPlayingAfterBufferUnderrun: 1,
+            enableLogs: false
+        ), streamCache: cache.streamCache)
+    }
+
+    deinit {
+        for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] notification in
+            let rawType = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue
+            let rawOptions = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
+            Task { @MainActor [weak self] in
+                if rawType == AVAudioSession.InterruptionType.began.rawValue { self?.handleInterruptionBegan() }
+                else if rawType == AVAudioSession.InterruptionType.ended.rawValue {
+                    self?.handleInterruptionEnded(shouldResume: AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume))
+                }
+            }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] notification in
+            let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.uintValue
+            if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+                Task { @MainActor [weak self] in self?.pause() }
+            }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification, object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleMediaServicesReset() }
+        })
+    }
+
+    func handleMediaServicesReset() {
+        startupWatchdog?.cancel()
+        playbackRequest = PlaybackRequestState()
+        wantsPlayback = false
+        resumeAfterInterruption = false
+        isAudioInterrupted = false
+        isPlaying = false
+        isLoadingTrack = false
+        isBuffering = false
+        canSeek = false
+        engineHasEntry = false
+        player.delegate = nil
+        player.stop()
+        player = Self.makePlayer(cache: audioCache)
+        player.delegate = playerDelegate
+        persistQueue()
+        updateNowPlaying()
+    }
+
+    func handleInterruptionBegan() {
+        guard !isAudioInterrupted else { return }
+        resumeAfterInterruption = wantsPlayback
+        let progress = player.progress
+        if engineHasEntry, pendingSeek == nil, seekTarget == nil, progress.isFinite { position = max(0, progress) }
+        isAudioInterrupted = true
+        canSeek = false
+        player.pause()
+        isPlaying = false
+        isBuffering = false
+        startupWatchdog?.cancel()
+        persistQueue()
+        updateNowPlaying()
+    }
+
+    func handleInterruptionEnded(shouldResume: Bool) {
+        guard isAudioInterrupted else { return }
+        let restart = shouldResume && resumeAfterInterruption && wantsPlayback
+        isAudioInterrupted = false
+        resumeAfterInterruption = false
+        if restart {
+            if isLoadingTrack { return }
+            // Rebuild playback at the saved position if the audio engine was stopped by the system.
+            engineHasEntry = false
+            resume()
+        } else {
+            wantsPlayback = false
+            updateNowPlaying()
         }
     }
 
@@ -472,13 +620,13 @@ final class PlaybackController {
         commands.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in await self?.previous() }; return .success }
         commands.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            self?.seek(to: event.positionTime)
-            return .success
+            return self?.seek(to: event.positionTime) == true ? .success : .commandFailed
         }
     }
 
     private func updateNowPlaying() {
         guard let track = currentTrack else { return }
+        MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = canSeek
         let requestID = playbackRequest.id
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
@@ -489,9 +637,13 @@ final class PlaybackController {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        Task { [weak self] in
+        artworkTask?.cancel()
+        artworkTask = Task { [weak self] in
             guard let self, let image = await self.artworkStore.image(for: track, api: self.api) else { return }
-            guard self.playbackRequest.id == requestID, self.currentTrack?.id == track.id else { return }
+            guard !Task.isCancelled, self.playbackRequest.id == requestID, self.currentTrack?.id == track.id else { return }
+            info[MPNowPlayingInfoPropertyPlaybackRate] = self.isPlaying ? 1 : 0
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = self.position
+            info[MPMediaItemPropertyPlaybackDuration] = max(self.duration, track.duration)
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }

@@ -32,6 +32,12 @@ final class AppModel {
     var selectedSourceID: String {
         didSet { preferences.set(selectedSourceID, forKey: "lemon.selectedSource") }
     }
+    var preferredSearchScope: String {
+        didSet { preferences.set(preferredSearchScope, forKey: "lemon.search.scope") }
+    }
+    var compactDisplay: Bool {
+        didSet { preferences.set(compactDisplay, forKey: "lemon.ui.compact") }
+    }
 
     let api: LemonAPIClient
     let cacheStore: CacheStore
@@ -67,7 +73,8 @@ final class AppModel {
         cacheStore = try CacheStore(inMemory: inMemory)
         audioCache = AudioCache(
             container: cacheStore.container,
-            root: inMemory ? FileManager.default.temporaryDirectory.appendingPathComponent("lemon-tests-\(UUID())") : nil
+            root: inMemory ? FileManager.default.temporaryDirectory.appendingPathComponent("lemon-tests-\(UUID())") : nil,
+            defaults: preferences
         )
         playback = PlaybackController(
             api: api, audioCache: audioCache, artworkStore: artworkStore, defaults: preferences, audioPolicy: audioPolicy
@@ -78,6 +85,8 @@ final class AppModel {
         )
         nasDownloads = NASDownloadCoordinator(api: api, store: cacheStore)
         selectedSourceID = preferences.string(forKey: "lemon.selectedSource") ?? "kw"
+        preferredSearchScope = preferences.string(forKey: "lemon.search.scope") ?? "在线"
+        compactDisplay = preferences.object(forKey: "lemon.ui.compact") as? Bool ?? true
         audioPolicy.onChange = { [weak self] in self?.collectionCache.applyAudioPolicy() }
         playback.preferredTrack = { [weak self] track in
             guard let self else { return track }
@@ -193,6 +202,7 @@ final class AppModel {
         guard sessionState != .signedOut else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        await refreshPlaybackSettings(force: force)
         do {
             async let loadedTracks = api.tracks()
             async let loadedAlbums = api.albums()
@@ -226,6 +236,16 @@ final class AppModel {
         } catch {
             sessionState = tracks.isEmpty ? .offline : sessionState
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshPlaybackSettings(force: Bool = false) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") { return }
+        #endif
+        let account = profile.map(accountKey)
+        if let settings = try? await api.serverPlaybackSettings(force: force), profile.map(accountKey) == account {
+            audioPolicy.applyServerSettings(settings)
         }
     }
 
@@ -677,6 +697,7 @@ final class AppModel {
         discoverRequests.removeAll()
         discoverError = nil
         playback.cancelAutomaticCaching()
+        audioPolicy.applyServerSettings(ServerPlaybackSettings())
         tracks = []
         albums = []
         artists = []

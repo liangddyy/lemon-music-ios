@@ -1,6 +1,7 @@
 // Derived from Cassette, licensed under MPL-2.0.
 
 import Foundation
+import ImageIO
 
 actor LemonAPIClient {
     enum APIError: LocalizedError, Sendable {
@@ -23,7 +24,7 @@ actor LemonAPIClient {
     private var baseURL: URL?
     private var token: String?
     private var apiPrefix = "/api/v1"
-    private var cachedPlayQuality: String?
+    private var cachedPlaybackSettings: ServerPlaybackSettings?
     private var playQualityUpdatedAt = Date.distantPast
 
     init(session: URLSession? = nil) {
@@ -40,7 +41,7 @@ actor LemonAPIClient {
     }
 
     func configure(baseURL: String, token: String?, apiPrefix: String? = nil) throws {
-        cachedPlayQuality = nil
+        cachedPlaybackSettings = nil
         playQualityUpdatedAt = .distantPast
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmed),
@@ -266,8 +267,10 @@ actor LemonAPIClient {
         extractArray(try await request("/download/list")).compactMap { NASDownloadTask(json: $0) }
     }
 
-    func audioDownloadRequest(for track: MusicTrack, refresh: Bool = false, quality: String? = nil) async throws -> URLRequest {
-        let url = try await resolvePlayURL(for: track, refresh: refresh, quality: quality)
+    func audioDownloadRequest(
+        for track: MusicTrack, refresh: Bool = false, quality: String? = nil, smooth: Bool = false
+    ) async throws -> URLRequest {
+        let url = try await resolvePlayURL(for: track, refresh: refresh, quality: quality, smooth: smooth)
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
         if url.scheme == baseURL?.scheme, url.host == baseURL?.host, url.port == baseURL?.port,
@@ -287,26 +290,38 @@ actor LemonAPIClient {
     }
 
     func serverPlayQuality(force: Bool = false) async throws -> String {
-        if !force, let cachedPlayQuality, Date().timeIntervalSince(playQualityUpdatedAt) < 60 { return cachedPlayQuality }
+        let settings = try await serverPlaybackSettings(force: force)
+        return settings.smooth ? "128k" : settings.quality
+    }
+
+    func serverPlaybackSettings(force: Bool = false) async throws -> ServerPlaybackSettings {
+        if !force, let cachedPlaybackSettings, Date().timeIntervalSince(playQualityUpdatedAt) < 60 { return cachedPlaybackSettings }
         do {
             let root = try await request("/settings")
-            let raw = (root["data"] ?? root)["player.playQuality"]?.string ?? "128k"
+            let data = root["data"] ?? root
+            let raw = data["player.playQuality"]?.string ?? "128k"
             let allowed = ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"]
             let quality = allowed.contains(raw) ? raw : "128k"
-            cachedPlayQuality = quality
+            let smoothValue = data["player.smoothStream"]
+            let smooth = smoothValue == .bool(true) || smoothValue?.string == "true"
+            let settings = ServerPlaybackSettings(quality: quality, smooth: smooth)
+            cachedPlaybackSettings = settings
             playQualityUpdatedAt = Date()
-            return quality
+            return settings
         } catch APIError.server(let status, _) where status == 404 {
-            return cachedPlayQuality ?? "128k"
+            return cachedPlaybackSettings ?? ServerPlaybackSettings()
         }
     }
 
-    func resolvePlayURL(for track: MusicTrack, refresh: Bool = false, quality: String? = nil) async throws -> URL {
+    func resolvePlayURL(
+        for track: MusicTrack, refresh: Bool = false, quality: String? = nil, smooth: Bool = false
+    ) async throws -> URL {
         var body: [String: JSONValue] = ["refresh": .bool(refresh)]
         switch track.locator.kind {
         case .local:
             if let trackID = track.locator.trackID { body["trackId"] = .string(trackID) }
             else if let path = track.locator.filePath { body["filePath"] = .string(path) }
+            body["smooth"] = .bool(AudioVariant.usesAAC(for: track, smooth: smooth))
         case .online:
             if let songID = track.locator.songID { body["songId"] = .string(songID) }
             if let source = track.locator.source { body["source"] = .string(source) }
@@ -332,17 +347,61 @@ actor LemonAPIClient {
     }
 
     func coverData(for track: MusicTrack) async throws -> Data? {
-        if let direct = track.artworkURL, let url = URL(string: direct), url.scheme != nil {
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 20
-            let (data, response) = try await session.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            return data
+        try Task.checkCancellation()
+        if let direct = track.artworkURL, let result = await remoteCoverData(direct) {
+            return result
         }
-        if let path = track.locator.filePath {
-            return try await data(path: "/tag/cover", query: [URLQueryItem(name: "path", value: path)])
+        try Task.checkCancellation()
+        if let path = track.locator.filePath,
+           let embedded = try? await data(path: "/tag/cover", query: [URLQueryItem(name: "path", value: path)]),
+           Self.isImage(embedded) {
+            return embedded
         }
+        try Task.checkCancellation()
+        var body = track.snapshotJSON.object ?? [:]
+        body["coverFallback"] = .bool(track.artworkURL != nil)
+        let root = try await request("/play/cover", method: "POST", body: .object(body))
+        guard let raw = root["url"]?.string ?? root["data"]?["url"]?.string,
+              !raw.isEmpty, raw != track.artworkURL else { return nil }
+        return await remoteCoverData(raw)
+    }
+
+    func remoteCoverData(_ raw: String) async -> Data? {
+        guard !Task.isCancelled else { return nil }
+        if raw.hasPrefix("data:image/") {
+            let parts = raw.split(separator: ",", maxSplits: 1)
+            guard parts.count == 2, parts[0].hasSuffix(";base64"),
+                  let decoded = Data(base64Encoded: String(parts[1])), Self.isImage(decoded) else { return nil }
+            return decoded
+        }
+        guard let url = try? absoluteURL(raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        var candidates = [url]
+        if url.scheme == "http", var secure = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            secure.scheme = "https"
+            if let secureURL = secure.url { candidates.insert(secureURL, at: 0) }
+        }
+        for candidate in candidates {
+            guard !Task.isCancelled else { return nil }
+            var request = URLRequest(url: candidate)
+            request.timeoutInterval = 8
+            if candidate.scheme == baseURL?.scheme, candidate.host == baseURL?.host, candidate.port == baseURL?.port, let token {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let (bytes, response) = try? await session.data(for: request),
+               (response as? HTTPURLResponse)?.statusCode == 200, Self.isImage(bytes) {
+                return bytes
+            }
+        }
+        guard !Task.isCancelled else { return nil }
+        if let bytes = try? await data(path: "/play/cover-img", query: [
+            URLQueryItem(name: "url", value: url.absoluteString), URLQueryItem(name: "w", value: "500"),
+        ]), Self.isImage(bytes) { return bytes }
         return nil
+    }
+
+    private nonisolated static func isImage(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        return CGImageSourceGetCount(source) > 0
     }
 
     func webSocketURL() throws -> URL {

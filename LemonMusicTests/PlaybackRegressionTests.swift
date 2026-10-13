@@ -1,9 +1,64 @@
 import Foundation
+import AudioStreaming
 import Testing
 @testable import LemonMusic
 
 @Suite(.serialized)
 struct PlaybackRegressionTests {
+    @MainActor @Test(arguments: [true, false])
+    func interruptionPausesUIAndOnlyResumesWhenAllowed(shouldResume: Bool) async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults)
+        defer { player.stop(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let song = try track(id: UUID().uuidString, title: "Song", artist: "Artist", duration: 20)
+        let file = root.appendingPathComponent("song.wav")
+        try silentWAV().write(to: file)
+        _ = try cache.storeDownloadedFile(at: file, key: song.id, mimeType: "audio/wav", protectedKey: nil)
+        await player.play(song)
+        for _ in 0..<100 where !player.canSeek { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(player.seek(to: 4))
+        try await Task.sleep(for: .milliseconds(200))
+        player.handleInterruptionBegan()
+        let saved = player.position
+        #expect(player.isAudioInterrupted)
+        #expect(!player.isPlaying)
+        #expect(!player.canSeek)
+        #expect(!player.seek(to: 8))
+        player.handlePlayerState(.playing)
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(!player.isPlaying)
+        #expect(player.position == saved)
+        player.handleInterruptionEnded(shouldResume: shouldResume)
+        for _ in 0..<100 where shouldResume && !player.isPlaying { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(!player.isAudioInterrupted)
+        #expect(player.isPlaying == shouldResume)
+        if !shouldResume { player.resume() }
+        for _ in 0..<100 where !player.canSeek { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(player.canSeek)
+        #expect(player.lastError == nil)
+        player.handleInterruptionBegan()
+        player.pause()
+        player.handleInterruptionEnded(shouldResume: true)
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(!player.isPlaying)
+        #expect(player.seek(to: 12))
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(player.position == 12)
+        let beforeReset = player.position
+        player.handleMediaServicesReset()
+        #expect(!player.isPlaying)
+        #expect(!player.canSeek)
+        #expect(player.currentTrack?.id == song.id)
+        player.resume()
+        for _ in 0..<100 where !player.canSeek { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(player.canSeek)
+        #expect(player.position >= beforeReset - 0.5)
+    }
+
     @MainActor @Test func restoredQueueLoadsAudioOnFirstResumeAndKeepsSavedPosition() async throws {
         let store = try CacheStore(inMemory: true)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

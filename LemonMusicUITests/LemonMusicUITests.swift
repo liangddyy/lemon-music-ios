@@ -1,6 +1,129 @@
 import XCTest
 
 final class LemonMusicUITests: XCTestCase {
+    func testPausedPlayerSliderSupportsAccessibilityAdjustment() {
+        let app = fixtures()
+        app.buttons["track.play.local:/fixtures/0.wav"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.buttons["miniPlayer.open"].tap()
+        let slider = app.sliders["player.progress"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "enabled == YES"), evaluatedWith: slider)
+        waitForExpectations(timeout: 10)
+        let playPause = app.buttons["player.playPause"]
+        if playPause.label == "暂停" { playPause.tap() }
+        XCTAssertEqual(playPause.label, "播放")
+        slider.adjust(toNormalizedSliderPosition: 0.65)
+        Thread.sleep(forTimeInterval: 0.8)
+        let raw = slider.value as? String ?? ""
+        let number = Double(raw.replacingOccurrences(of: "%", with: "")) ?? 0
+        let seconds = raw.contains("%") ? number / 100 * 20 : number
+        XCTAssertGreaterThan(seconds, 10)
+        XCTAssertLessThan(seconds, 15)
+        XCTAssertEqual(playPause.label, "播放")
+        attachment(app, name: "paused-player-seek")
+    }
+
+    func testCachePreferencesUpdateImmediatelyAndSurviveRelaunch() {
+        let app = fixtures(extra: ["-uiTestingPersistentPlayback", "-uiTestingResetPlayback"])
+        app.buttons["设置"].tap()
+        let automatic = app.switches["settings.automaticCache"]
+        XCTAssertTrue(automatic.waitForExistence(timeout: 5))
+        XCTAssertEqual(automatic.value as? String, "1")
+        automatic.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(automatic.value as? String, "0")
+        let limit = app.buttons["settings.cacheLimit"]
+        XCTAssertTrue(limit.waitForExistence(timeout: 5))
+        limit.tap()
+        app.buttons["1 GB"].tap()
+        XCTAssertTrue(limit.label.contains("1 GB"))
+        attachment(app, name: "cache-preferences")
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-uiTestingResetPlayback" }
+        app.launch()
+        XCTAssertTrue(app.buttons["设置"].waitForExistence(timeout: 10))
+        app.buttons["设置"].tap()
+        XCTAssertTrue(automatic.waitForExistence(timeout: 5))
+        XCTAssertEqual(automatic.value as? String, "0")
+        XCTAssertTrue(limit.label.contains("1 GB"))
+    }
+
+    func testSearchDefaultsOnlineAndRemembersScopeAcrossTabs() {
+        let app = fixtures()
+        tabButton("搜索", in: app.tabBars.firstMatch).tap()
+        let online = app.segmentedControls.firstMatch.buttons["在线"]
+        XCTAssertTrue(online.waitForExistence(timeout: 5))
+        XCTAssertTrue(online.isSelected)
+        app.segmentedControls.firstMatch.buttons["音乐库"].tap()
+        app.tabBars.buttons["首页"].tap()
+        tabButton("搜索", in: app.tabBars.firstMatch).tap()
+        XCTAssertTrue(app.segmentedControls.firstMatch.buttons["音乐库"].isSelected)
+        attachment(app, name: "search-remembers-scope")
+    }
+
+    func testPlayerDownloadSeparatesNASAndPhoneCache() {
+        let app = fixtures()
+        app.buttons["track.play.local:/fixtures/0.wav"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.buttons["miniPlayer.open"].tap()
+        let download = app.buttons["player.download"]
+        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(download.isHittable)
+        download.tap()
+        XCTAssertTrue(app.buttons["download.cache"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["download.nas"].isEnabled)
+        XCTAssertTrue(app.staticTexts["已在 NAS 音乐库"].exists)
+        attachment(app, name: "single-track-download")
+    }
+
+    func testMiniPlayerStaysAboveTabBarAcrossTabsAndNavigation() {
+        let app = fixtures()
+        let miniPlayer = app.buttons["miniPlayer.open"]
+        let tabBar = app.tabBars.firstMatch
+        for title in ["首页", "发现", "音乐库", "搜索"] {
+            XCTAssertTrue(tabButton(title, in: tabBar).isHittable)
+        }
+        XCTAssertFalse(miniPlayer.exists)
+        attachment(app, name: "tabs-without-player")
+        app.buttons["track.play.local:/fixtures/0.wav"].firstMatch.tap()
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+
+        for title in ["发现", "音乐库", "搜索", "首页"] {
+            XCTAssertLessThanOrEqual(miniPlayer.frame.maxY, tabBar.frame.minY)
+            let button = tabButton(title, in: tabBar)
+            XCTAssertTrue(button.isHittable)
+            button.tap()
+            XCTAssertTrue(miniPlayer.waitForExistence(timeout: 3))
+            XCTAssertLessThanOrEqual(miniPlayer.frame.maxY, tabBar.frame.minY)
+            if title == "搜索" {
+                XCTAssertTrue(app.navigationBars["搜索"].exists)
+                // Newer systems replace the selected search tab with a search field.
+                if !tabBar.buttons["首页"].exists { tabBar.buttons["音乐库"].tap() }
+            } else {
+                XCTAssertTrue(button.isSelected)
+            }
+        }
+        attachment(app, name: "mini-player-above-tabs")
+        for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
+        app.staticTexts["我的精选"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["collection.playAll"].waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(miniPlayer.frame.maxY, tabBar.frame.minY)
+        attachment(app, name: "mini-player-above-tabs-in-playlist")
+        miniPlayer.tap()
+        XCTAssertTrue(app.buttons["player.close"].waitForExistence(timeout: 5))
+        app.buttons["player.close"].tap()
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(miniPlayer.frame.maxY, tabBar.frame.minY)
+        XCTAssertTrue(tabBar.buttons["发现"].isHittable)
+    }
+
+    private func tabButton(_ title: String, in tabBar: XCUIElement) -> XCUIElement {
+        if title == "搜索" {
+            return tabBar.buttons.matching(NSPredicate(format: "label IN %@", ["搜索", "Search"])).firstMatch
+        }
+        return tabBar.buttons[title]
+    }
+
     func testCacheClearRequiresConfirmationAndRefreshesUsage() {
         let app = fixtures()
         app.buttons["设置"].tap()
@@ -80,9 +203,9 @@ final class LemonMusicUITests: XCTestCase {
         app.buttons["collection.playAll"].tap()
         XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
         app.buttons["miniPlayer.open"].tap()
-        let toggle = app.buttons["player.lyricsToggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        toggle.tap()
+        let media = app.descendants(matching: .any).matching(identifier: "player.media").firstMatch
+        XCTAssertTrue(media.waitForExistence(timeout: 5))
+        media.swipeLeft()
         let lyrics = app.descendants(matching: .any).matching(identifier: "player.lyrics").firstMatch
         XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "player.trackInfo").firstMatch.exists)
@@ -93,7 +216,7 @@ final class LemonMusicUITests: XCTestCase {
         XCTAssertGreaterThan(lyrics.frame.width, app.frame.width * 0.8)
         XCTAssertLessThanOrEqual(lyrics.frame.maxY, progress.frame.minY + 2)
         attachment(app, name: "lyrics-full-area")
-        toggle.tap()
+        lyrics.swipeRight()
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "player.trackInfo").firstMatch.waitForExistence(timeout: 3))
         app.buttons["player.close"].tap()
     }

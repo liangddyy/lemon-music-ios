@@ -2,17 +2,22 @@
 
 import AudioStreaming
 import Foundation
+import Observation
 import SwiftData
 
-@MainActor
+@Observable @MainActor
 final class AudioCache {
     static let sizeOptions: [Int64] = [512, 1_024, 2_048, 5_120, 10_240].map { $0 * 1_024 * 1_024 }
     static let defaultMaxBytes: Int64 = 2_048 * 1_024 * 1_024
+    static func sizeTitle(_ bytes: Int64) -> String {
+        bytes == 512 * 1_024 * 1_024 ? "512 MB" : "\(bytes / (1_024 * 1_024 * 1_024)) GB"
+    }
 
     private let container: ModelContainer
     private let directory: URL
     let streamCache: ProgressiveAudioCache
     private let defaultsKey = "lemon.audioCache.maxBytes"
+    private let defaults: UserDefaults
 
     var onStreamingProgress: ((String, Int64, Int64) -> Void)?
     var onStreamingCompleted: ((String) -> Void)?
@@ -26,22 +31,36 @@ final class AudioCache {
     }
 
     var maxBytes: Int64 {
-        get {
-            let value = UserDefaults.standard.object(forKey: defaultsKey) as? NSNumber
-            return value?.int64Value ?? Self.defaultMaxBytes
+        didSet {
+            defaults.set(NSNumber(value: maxBytes), forKey: defaultsKey)
+            evictIfNeeded(protectedKey: playingKey)
         }
-        set { UserDefaults.standard.set(NSNumber(value: newValue), forKey: defaultsKey) }
     }
 
-    init(container: ModelContainer, root: URL? = nil) {
+    var automaticCachingEnabled: Bool {
+        didSet {
+            defaults.set(automaticCachingEnabled, forKey: "lemon.audioCache.automatic")
+            streamCache.setAutomaticCachingEnabled(automaticCachingEnabled)
+            onChange?()
+        }
+    }
+
+    init(container: ModelContainer, root: URL? = nil, defaults: UserDefaults = .standard) {
         self.container = container
+        self.defaults = defaults
+        maxBytes = (defaults.object(forKey: "lemon.audioCache.maxBytes") as? NSNumber)?.int64Value ?? Self.defaultMaxBytes
+        automaticCachingEnabled = defaults.object(forKey: "lemon.audioCache.automatic") as? Bool ?? true
         let root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("lemon-music", isDirectory: true)
         directory = root.appendingPathComponent("audio", isDirectory: true)
         streamCache = ProgressiveAudioCache(directory: root.appendingPathComponent("audio-partial", isDirectory: true))
+        streamCache.setAutomaticCachingEnabled(automaticCachingEnabled)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         streamCache.onProgress = { [weak self] key, downloaded, total in
-            Task { @MainActor in self?.onStreamingProgress?(key, downloaded, total) }
+            Task { @MainActor in
+                self?.evictIfNeeded(protectedKey: self?.playingKey)
+                self?.onStreamingProgress?(key, downloaded, total)
+            }
         }
         streamCache.onComplete = { [weak self] completion in
             Task { @MainActor in self?.finalize(completion) }
@@ -68,10 +87,15 @@ final class AudioCache {
         return url
     }
 
-    func availableCache(for track: MusicTrack, touching: Bool = true) -> (key: String, url: URL)? {
+    func availableCache(
+        for track: MusicTrack, touching: Bool = true, smooth: Bool? = nil
+    ) -> (key: String, url: URL)? {
+        if let smooth, track.locator.kind == .local {
+            let key = AudioVariant.key(for: track, quality: nil, smooth: smooth)
+            return cachedURL(for: key, touching: touching).map { (key, $0) }
+        }
         if let url = cachedURL(for: track.id, touching: touching) { return (track.id, url) }
-        guard track.locator.kind == .online else { return nil }
-        let prefix = track.id + "|quality:"
+        let prefix = track.id + (track.locator.kind == .online ? "|quality:" : "|format:")
         let records = (try? container.mainContext.fetch(FetchDescriptor<AudioCacheEntry>(
             predicate: #Predicate { $0.key.starts(with: prefix) },
             sortBy: [SortDescriptor(\.lastAccessedAt, order: .reverse)]
@@ -282,6 +306,7 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
     private var reportedPercent: [String: Int] = [:]
     private var finalizing: Set<String> = []
     private var enabledKeys: Set<String> = []
+    private var automaticCachingEnabled = true
 
     var onProgress: ((String, Int64, Int64) -> Void)?
     var onComplete: ((Completion) -> Void)?
@@ -289,6 +314,12 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
     init(directory: URL) {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    func setAutomaticCachingEnabled(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        automaticCachingEnabled = enabled
     }
 
     func configure(
@@ -359,7 +390,7 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
         var progress: (Int64, Int64)?
 
         lock.lock()
-        guard enabledKeys.contains(key) else {
+        guard automaticCachingEnabled, enabledKeys.contains(key) else {
             lock.unlock()
             return
         }
@@ -404,7 +435,7 @@ nonisolated final class ProgressiveAudioCache: AudioStreamCache, @unchecked Send
     func complete(key: String) {
         var completion: Completion?
         lock.lock()
-        if enabledKeys.contains(key), !finalizing.contains(key), let metadata = loadMetadata(for: key) {
+        if automaticCachingEnabled, enabledKeys.contains(key), !finalizing.contains(key), let metadata = loadMetadata(for: key) {
             let size = fileSize(at: dataURL(for: key))
             if metadata.totalLength > 0, size == metadata.totalLength {
                 finalizing.insert(key)

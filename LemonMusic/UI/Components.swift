@@ -7,6 +7,7 @@ struct TrackRow: View {
     @Environment(AppModel.self) private var model
     let track: MusicTrack
     var queue: [MusicTrack]? = nil
+    @State private var showingDownload = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -14,10 +15,10 @@ struct TrackRow: View {
                 Task { await model.play(track, in: queue) }
             } label: {
                 HStack(spacing: 12) {
-                    TrackArtwork(track: track, size: 48)
+                    TrackArtwork(track: track, size: model.compactDisplay ? 44 : 48)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(track.title)
-                            .font(.body.weight(.medium))
+                            .font(model.compactDisplay ? .subheadline.weight(.medium) : .body.weight(.medium))
                             .lineLimit(1)
                         Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption)
@@ -42,6 +43,7 @@ struct TrackRow: View {
                 Button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     model.playback.playNext(track)
                 }
+                Button("下载", systemImage: "arrow.down.to.line") { showingDownload = true }
                 Menu("添加到歌单", systemImage: "text.badge.plus") {
                     ForEach(model.userData.playlists) { playlist in
                         Button(playlist.name) { model.add(track, to: playlist.id) }
@@ -54,6 +56,8 @@ struct TrackRow: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("歌曲菜单")
         }
+        .sheet(isPresented: $showingDownload) { TrackDownloadSheet(track: track) }
+        .listRowInsets(EdgeInsets(top: model.compactDisplay ? 6 : 10, leading: 16, bottom: model.compactDisplay ? 6 : 10, trailing: 16))
     }
 }
 
@@ -79,7 +83,7 @@ struct TrackArtwork: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: min(9, size * 0.18), style: .continuous))
-        .task(id: track.id) { image = await model.artworkStore.image(for: track, api: model.api) }
+        .task(id: track.id + "|" + (track.artworkURL ?? "")) { image = await model.artworkStore.image(for: track, api: model.api) }
     }
 }
 
@@ -103,7 +107,7 @@ struct AlbumArtwork: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .task(id: album.id) { image = await model.artworkStore.image(for: album) }
+        .task(id: album.id + "|" + (album.artworkURL ?? "")) { image = await model.artworkStore.image(for: album, api: model.api) }
     }
 }
 
@@ -133,7 +137,7 @@ struct PlaylistArtwork: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .task(id: playlist.artworkURL) {
-            image = await model.artworkStore.image(key: cacheKey ?? "playlist:\(playlist.id)", remoteURL: playlist.artworkURL)
+            image = await model.artworkStore.image(key: cacheKey ?? "playlist:\(playlist.id)", remoteURL: playlist.artworkURL, api: model.api)
             remoteLoaded = true
         }
     }
@@ -150,11 +154,12 @@ struct EmptyContentView: View {
 }
 
 struct SectionTitle: View {
+    @Environment(AppModel.self) private var model
     let title: String
 
     var body: some View {
         Text(title)
-            .font(.title3.weight(.bold))
+            .font(model.compactDisplay ? .headline : .title3.weight(.bold))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

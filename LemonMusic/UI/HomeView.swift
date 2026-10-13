@@ -10,7 +10,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 26) {
+            LazyVStack(spacing: model.compactDisplay ? 18 : 26) {
                 welcomeHeader
 
                 if !model.recentTracks.isEmpty {
@@ -32,6 +32,7 @@ struct HomeView: View {
             .padding(.bottom, 100)
         }
         .navigationTitle("首页")
+        .navigationBarTitleDisplayMode(model.compactDisplay ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("设置", systemImage: "gearshape") { showingSettings = true }
@@ -55,8 +56,9 @@ struct HomeView: View {
             LemonMark(size: 54)
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.profile?.user?.displayName ?? "欢迎回来")
-                    .font(.title2.weight(.bold))
+                    .font(model.compactDisplay ? .headline : .title2.weight(.bold))
                 Text("今天想听点什么？")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -77,7 +79,8 @@ struct HomeView: View {
     }
 
     private func trackCarousel(title: String, tracks: [MusicTrack]) -> some View {
-        VStack(spacing: 12) {
+        let artworkSize: CGFloat = model.compactDisplay ? 116 : 138
+        return VStack(spacing: 12) {
             SectionTitle(title: title)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
@@ -86,7 +89,7 @@ struct HomeView: View {
                             Task { await model.play(track, in: tracks) }
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
-                                TrackArtwork(track: track, size: 138)
+                                TrackArtwork(track: track, size: artworkSize)
                                 Text(track.title)
                                     .font(.subheadline.weight(.semibold))
                                     .lineLimit(1)
@@ -95,7 +98,7 @@ struct HomeView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
-                            .frame(width: 138, alignment: .leading)
+                            .frame(width: artworkSize, alignment: .leading)
                         }
                         .buttonStyle(.plain)
                     }
@@ -115,7 +118,7 @@ struct HomeView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("我的歌单")
-                    .font(.title3.weight(.bold))
+                    .font(model.compactDisplay ? .headline : .title3.weight(.bold))
                 Spacer()
                 Button { showingCreatePlaylist = true } label: {
                     Image(systemName: "plus")
@@ -141,11 +144,11 @@ struct HomeView: View {
                                 PlaylistDetailView(playlist: playlist)
                             } label: {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    PlaylistArtwork(playlist: playlist, size: 140)
+                                    PlaylistArtwork(playlist: playlist, size: model.compactDisplay ? 116 : 140)
                                     Text(playlist.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                                     Text("\(playlist.tracks.count) 首").font(.caption).foregroundStyle(.secondary)
                                 }
-                                .frame(width: 140, alignment: .leading)
+                                .frame(width: model.compactDisplay ? 116 : 140, alignment: .leading)
                             }
                             .buttonStyle(.plain)
                         }

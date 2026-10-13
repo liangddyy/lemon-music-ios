@@ -7,7 +7,7 @@ struct DiscoverView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 26) {
+            LazyVStack(spacing: model.compactDisplay ? 18 : 26) {
                 sourcePicker
                 if model.isRefreshingDiscover {
                     ProgressView().frame(maxWidth: .infinity)
@@ -82,6 +82,7 @@ struct DiscoverView: View {
         }
         .scrollBounceBehavior(.always)
         .navigationTitle("发现")
+        .navigationBarTitleDisplayMode(model.compactDisplay ? .inline : .large)
         .task { await model.refreshDiscover() }
         .refreshable { await model.refreshDiscover(force: true) }
     }

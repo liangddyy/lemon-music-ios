@@ -5,7 +5,7 @@ import SwiftUI
 struct SearchView: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
-    @State private var scope: Scope = .local
+    @State private var scope: Scope = .online
     @State private var searchTask: Task<Void, Never>?
     @State private var onlineKind: OnlineSearchKind = .songs
 
@@ -33,9 +33,14 @@ struct SearchView: View {
             results
         }
         .navigationTitle("搜索")
+        .navigationBarTitleDisplayMode(model.compactDisplay ? .inline : .large)
         .searchable(text: $query, prompt: scope == .local ? "搜索本地歌曲、歌手或专辑" : "搜索在线音乐")
         .onChange(of: query) { _, value in scheduleSearch(value) }
-        .onChange(of: scope) { _, _ in scheduleSearch(query) }
+        .onAppear { scope = Scope(rawValue: model.preferredSearchScope) ?? .online }
+        .onChange(of: scope) { _, value in
+            model.preferredSearchScope = value.rawValue
+            scheduleSearch(query)
+        }
         .onChange(of: onlineKind) { _, _ in scheduleSearch(query) }
     }
 

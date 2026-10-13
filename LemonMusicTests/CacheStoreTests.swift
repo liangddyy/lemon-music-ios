@@ -1,9 +1,66 @@
 import Foundation
+import Observation
 import Testing
 @testable import LemonMusic
 
 @MainActor
 struct CacheStoreTests {
+    @Test func cacheLimitIsObservablePersistsAndEvictsOldestFile() throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let name = UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let cache = AudioCache(container: store.container, root: root, defaults: defaults)
+        cache.maxBytes = 4_096
+        for key in ["first", "second"] {
+            _ = try cache.storeDownloadedFile(
+                at: temporaryAudioFile(byte: 65, count: 2_048), key: key, mimeType: "audio/mpeg", protectedKey: nil
+            )
+        }
+        nonisolated(unsafe) var changed = false
+        withObservationTracking { _ = cache.maxBytes } onChange: { changed = true }
+        cache.maxBytes = 2_048
+        #expect(changed)
+        #expect(cache.usedBytes() == 2_048)
+        #expect(cache.cachedURL(for: "first") == nil)
+        #expect(cache.cachedURL(for: "second") != nil)
+        #expect(AudioCache(container: store.container, root: root, defaults: defaults).maxBytes == 2_048)
+    }
+
+    @Test func disablingAutomaticCacheStopsWritesButKeepsExistingPrefixAndManualCache() throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let name = UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let cache = AudioCache(container: store.container, root: root, defaults: defaults)
+        let stream = cache.streamCache
+        stream.configure(key: "song", totalLength: 4_096, mimeType: "audio/mpeg", headerLength: 0, remoteDataOffset: 0)
+        stream.store(data: Data(repeating: 65, count: 2_048), at: 0, for: "song")
+        cache.automaticCachingEnabled = false
+        stream.store(data: Data(repeating: 66, count: 2_048), at: 2_048, for: "song")
+        #expect(stream.cachedByteCount(for: "song") == 2_048)
+        #expect(stream.data(for: "song", offset: 0, length: 2_048)?.count == 2_048)
+        #expect(!AudioCache(container: store.container, root: root, defaults: defaults).automaticCachingEnabled)
+        _ = try cache.storeDownloadedFile(at: temporaryAudioFile(byte: 67, count: 2_048), key: "manual", mimeType: "audio/mpeg", protectedKey: nil)
+        #expect(cache.cachedURL(for: "manual") != nil)
+    }
+
+    @Test func originalAndAACFilesAreSelectedByCurrentLocalPolicy() throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = AudioCache(container: store.container, root: root)
+        let track = try #require(MusicTrack(json: .object(["filePath": .string("/music/song.flac")])))
+        _ = try cache.storeDownloadedFile(at: temporaryAudioFile(byte: 65, count: 2_048), key: track.id, mimeType: "audio/flac", protectedKey: nil)
+        #expect(cache.availableCache(for: track, smooth: true) == nil)
+        let aac = AudioVariant.key(for: track, quality: nil, smooth: true)
+        _ = try cache.storeDownloadedFile(at: temporaryAudioFile(byte: 66, count: 2_048), key: aac, mimeType: "audio/mp4", protectedKey: nil)
+        #expect(cache.availableCache(for: track, smooth: true)?.key == aac)
+        #expect(cache.availableCache(for: track, smooth: false)?.key == track.id)
+    }
+
     @Test func staleWhileRevalidateKeepsExpiredPayloadReadable() throws {
         let store = try CacheStore(inMemory: true)
         store.save(["cached"], for: "key", ttl: -1)

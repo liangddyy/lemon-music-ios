@@ -89,11 +89,13 @@ struct FullPlayerView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingLyrics = false
     @State private var showingQueue = false
+    @State private var downloadTrack: MusicTrack?
     @State private var lyricDocument = LyricDocument.empty
     @State private var lyricsLoading = false
     @State private var dismissProgress: CGFloat = 0
     @State private var isDismissing = false
     @State private var isSeeking = false
+    @State private var seekPosition: TimeInterval = 0
     @State private var dismissGestureAccepted = false
     @State private var progressFrame = CGRect.zero
 
@@ -101,9 +103,10 @@ struct FullPlayerView: View {
         GeometryReader { presentation in
         NavigationStack {
             GeometryReader { proxy in
-                let artworkSize = min(proxy.size.width - 44, max(168, proxy.size.height * 0.39), 400)
+                let artworkSize = max(1, min(proxy.size.width - 44, max(168, proxy.size.height * 0.39), 400))
                 if let track = model.playback.currentTrack {
                     VStack(spacing: 0) {
+                        ZStack {
                         if showingLyrics {
                             PlayerLyricsView(
                                 document: lyricDocument,
@@ -113,7 +116,6 @@ struct FullPlayerView: View {
                                 withAnimation(.snappy(duration: 0.32)) { showingLyrics = false }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityIdentifier("player.lyrics")
                             .transition(.opacity)
                         } else {
                             VStack(spacing: 0) {
@@ -131,11 +133,11 @@ struct FullPlayerView: View {
 
                                 VStack(spacing: 5) {
                                     Text(track.title)
-                                        .font(.title2.weight(.bold))
+                                        .font(model.compactDisplay ? .title3.weight(.bold) : .title2.weight(.bold))
                                         .multilineTextAlignment(.center)
                                         .lineLimit(2)
                                     Text(track.artist)
-                                        .font(.title3)
+                                        .font(model.compactDisplay ? .subheadline : .title3)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                     if !track.album.isEmpty {
@@ -154,6 +156,13 @@ struct FullPlayerView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)
                         }
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier(showingLyrics ? "player.lyrics" : "player.media")
+                        .accessibilityAction(named: showingLyrics ? "显示封面" : "显示歌词") {
+                            withAnimation(.snappy(duration: 0.32)) { showingLyrics.toggle() }
+                        }
+                        .simultaneousGesture(mediaSwitchGesture)
 
                         Spacer().frame(height: 10)
                         progress
@@ -169,6 +178,7 @@ struct FullPlayerView: View {
                 }
             }
             .background(playerBackground)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("关闭", systemImage: "chevron.down") { closePlayer() }
@@ -179,6 +189,7 @@ struct FullPlayerView: View {
                 }
             }
             .sheet(isPresented: $showingQueue) { QueueSheet() }
+            .sheet(item: $downloadTrack) { TrackDownloadSheet(track: $0) }
             .task(id: model.playback.currentTrack?.id) {
                 await loadLyrics(for: model.playback.currentTrack)
             }
@@ -195,11 +206,19 @@ struct FullPlayerView: View {
     private var progress: some View {
         VStack(spacing: 7) {
             Slider(value: Binding(
-                get: { min(model.playback.position, max(model.playback.duration, 1)) },
-                set: { model.playback.seek(to: $0) }
-            ), in: 0...max(model.playback.duration, 1), onEditingChanged: { isSeeking = $0 })
+                get: { min(isSeeking ? seekPosition : model.playback.position, max(model.playback.duration, 1)) },
+                set: {
+                    seekPosition = $0
+                    if !isSeeking { model.playback.seek(to: $0) }
+                }
+            ), in: 0...max(model.playback.duration, 1), onEditingChanged: { editing in
+                if editing { seekPosition = model.playback.position }
+                else { model.playback.seek(to: seekPosition) }
+                isSeeking = editing
+            })
             .tint(.primary)
             .accessibilityIdentifier("player.progress")
+            .disabled(!model.playback.canSeek)
             HStack {
                 Text(time(model.playback.position))
                 Spacer()
@@ -207,6 +226,12 @@ struct FullPlayerView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            if model.playback.isAudioInterrupted {
+                Text("播放已被其他音频暂停")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("player.interrupted")
+            }
             if model.playback.isLoadingTrack || model.playback.isBuffering {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -237,7 +262,7 @@ struct FullPlayerView: View {
                 Image(systemName: model.playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 72))
             }
-            .disabled(model.playback.isLoadingTrack)
+            .disabled(model.playback.isLoadingTrack || model.playback.isAudioInterrupted)
             .accessibilityIdentifier("player.playPause")
             .accessibilityLabel(model.playback.isPlaying ? "暂停" : "播放")
             Button { Task { await model.playback.next() } } label: {
@@ -256,10 +281,10 @@ struct FullPlayerView: View {
                 model.toggleFavorite(track)
             }
             Spacer()
-            PlayerIconButton(icon: showingLyrics ? "photo" : "quote.bubble", label: showingLyrics ? "显示封面" : "显示歌词") {
-                withAnimation(.snappy(duration: 0.32)) { showingLyrics.toggle() }
+            PlayerIconButton(icon: "arrow.down.to.line", label: "下载") {
+                downloadTrack = track
             }
-            .accessibilityIdentifier("player.lyricsToggle")
+            .accessibilityIdentifier("player.download")
             Spacer()
             PlayerIconButton(
                 icon: model.playback.mode.symbol,
@@ -285,7 +310,10 @@ struct FullPlayerView: View {
 
             switch model.playback.audioCacheState(for: track) {
             case .notCached:
-                PlaybackStatusBadge(title: "未缓存", icon: "icloud.and.arrow.down", color: .secondary)
+                PlaybackStatusBadge(
+                    title: model.audioCache.automaticCachingEnabled ? "未缓存" : "自动缓存已关闭",
+                    icon: "icloud.and.arrow.down", color: .secondary
+                )
             case .caching(let progress):
                 let title = progress.map { "已缓存 \(Int($0 * 100))%" } ?? "边播边缓存"
                 PlaybackStatusBadge(title: title, icon: "arrow.down.circle", color: .orange)
@@ -357,6 +385,16 @@ struct FullPlayerView: View {
                         dismissProgress = 0
                     }
                 }
+            }
+    }
+
+    private var mediaSwitchGesture: some Gesture {
+        DragGesture(minimumDistance: 24, coordinateSpace: .global)
+            .onEnded { value in
+                guard value.startLocation.x > 22, !isDismissing, !showingQueue,
+                      abs(value.translation.width) > 50,
+                      abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                withAnimation(.snappy(duration: 0.32)) { showingLyrics = value.translation.width < 0 }
             }
     }
 
