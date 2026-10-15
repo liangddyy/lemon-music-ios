@@ -44,14 +44,24 @@ nonisolated struct PlaybackQueue: Codable, Sendable {
     var current: Entry? { ordered.indices.contains(index) ? ordered[index] : nil }
 
     mutating func replace(with tracks: [MusicTrack], selecting track: MusicTrack) {
+        replace(with: tracks, selectingAt: tracks.firstIndex(of: track) ?? 0)
+    }
+
+    mutating func replace(with tracks: [MusicTrack], selectingAt selectedIndex: Int) {
         original = tracks.map { Entry(track: $0) }
         ordered = original
-        index = tracks.firstIndex(of: track) ?? 0
+        index = tracks.indices.contains(selectedIndex) ? selectedIndex : 0
         if mode == .shuffled { shuffleKeepingCurrent() }
     }
 
     mutating func select(_ track: MusicTrack) -> Bool {
         guard let selected = ordered.firstIndex(where: { $0.track == track }) else { return false }
+        index = selected
+        return true
+    }
+
+    mutating func select(entryID: UUID) -> Bool {
+        guard let selected = ordered.firstIndex(where: { $0.id == entryID }) else { return false }
         index = selected
         return true
     }

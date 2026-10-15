@@ -49,23 +49,33 @@ final class AppModel {
     let nasDownloads: NASDownloadCoordinator
     let webSocket = LemonWebSocket()
 
-    private let keychain = KeychainStore()
+    private let keychain: KeychainStore
     private let profileKey = "lemon.serverProfile"
     private let tokenKey = "session-token"
     private let preferences: UserDefaults
+    private let isInMemory: Bool
     private var saveUserDataTask: Task<Void, Never>?
     private var discoverRequests: [String: UUID] = [:]
     private var localMatchTasks: [String: Task<MusicTrack?, Never>] = [:]
     private var searchRequestID: UUID?
+    @ObservationIgnored private var bootstrapTask: Task<Void, Never>?
+    @ObservationIgnored private var hasBootstrapped = false
+    private(set) var sessionGeneration = UUID()
+    private(set) var libraryRevision = UUID()
 
     var isRefreshingDiscover: Bool { discoverRequests[selectedSourceID] != nil }
 
-    init(inMemory: Bool = false, api: LemonAPIClient = LemonAPIClient()) throws {
+    init(
+        inMemory: Bool = false, api: LemonAPIClient = LemonAPIClient(),
+        defaults: UserDefaults? = nil, keychain: KeychainStore = KeychainStore()
+    ) throws {
         self.api = api
+        self.keychain = keychain
+        isInMemory = inMemory
         let arguments = ProcessInfo.processInfo.arguments
         let persistentFixture = inMemory && arguments.contains("-uiTestingPersistentPlayback")
         let suite = persistentFixture ? "lemon.ui.playback-restoration" : "lemon.tests.\(UUID())"
-        preferences = inMemory ? UserDefaults(suiteName: suite)! : .standard
+        preferences = defaults ?? (inMemory ? UserDefaults(suiteName: suite)! : .standard)
         if persistentFixture && arguments.contains("-uiTestingResetPlayback") {
             preferences.removePersistentDomain(forName: suite)
         }
@@ -99,7 +109,7 @@ final class AppModel {
         webSocket.onEvent = { [weak self] type in self?.handleWebSocketEvent(type) }
         if ProcessInfo.processInfo.arguments.contains("-uiTestingReset") {
             keychain.delete(tokenKey)
-            UserDefaults.standard.removeObject(forKey: profileKey)
+            preferences.removeObject(forKey: profileKey)
             cacheStore.clearAll()
             audioCache.clear()
             artworkStore.clear()
@@ -114,7 +124,18 @@ final class AppModel {
         tracks.sorted { ($0.modifiedAt ?? 0) > ($1.modifiedAt ?? 0) }.prefix(30).map { $0 }
     }
 
-    func bootstrap() async {
+    func bootstrap(includeDiscovery: Bool = true) async {
+        if let bootstrapTask { await bootstrapTask.value; return }
+        guard !hasBootstrapped else { return }
+        let task = Task { await self.restoreSession(includeDiscovery: includeDiscovery) }
+        bootstrapTask = task
+        await task.value
+        hasBootstrapped = true
+        bootstrapTask = nil
+    }
+
+    private func restoreSession(includeDiscovery: Bool) async {
+        let generation = sessionGeneration
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
             await loadUITestFixtures()
@@ -129,39 +150,46 @@ final class AppModel {
         self.profile = profile
         do {
             try await api.configure(baseURL: profile.baseURL, token: token, apiPrefix: profile.apiPrefix)
+            guard sessionGeneration == generation else { return }
             configureDownloads()
-            sessionState = tracks.isEmpty ? .loading : .ready
+            sessionState = .ready
             let user = try await api.currentUser()
+            guard sessionGeneration == generation else { return }
             self.profile?.user = user
             self.profile?.apiPrefix = await api.selectedAPIPrefix()
+            guard sessionGeneration == generation else { return }
             saveProfile()
             configureDownloads()
             sessionState = .ready
             connectWebSocket()
-            await refreshAll(force: false)
+            await refreshAll(force: false, includeDiscovery: includeDiscovery)
         } catch LemonAPIClient.APIError.unauthorized {
-            collectionCache.reset()
-            nasDownloads.reset()
-            keychain.delete(tokenKey)
-            sessionState = .signedOut
+            guard sessionGeneration == generation else { return }
+            invalidateSession()
         } catch {
-            sessionState = tracks.isEmpty ? .signedOut : .offline
-            errorMessage = tracks.isEmpty ? "无法连接服务器，请检查地址和网络" : nil
+            guard sessionGeneration == generation else { return }
+            sessionState = .offline
+            errorMessage = "无法连接服务器，已保留本地缓存"
         }
     }
 
     func login(baseURL: String, username: String, password: String) async throws {
+        sessionGeneration = UUID()
+        let generation = sessionGeneration
         let previousProfile = profile ?? loadProfile()
         saveUserDataTask?.cancel()
         let normalized = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         try await api.configure(baseURL: normalized, token: nil)
+        guard generation == sessionGeneration else { throw CancellationError() }
         let session = try await api.login(username: username, password: password)
+        let prefix = await api.selectedAPIPrefix()
+        guard generation == sessionGeneration else { throw CancellationError() }
         try keychain.set(session.token, for: tokenKey)
         let nextProfile = ServerProfile(
             baseURL: normalized,
             username: username,
             user: session.user,
-            apiPrefix: await api.selectedAPIPrefix()
+            apiPrefix: prefix
         )
         if previousProfile.map({ accountKey($0) != accountKey(nextProfile) }) ?? true {
             collectionCache.reset()
@@ -178,31 +206,39 @@ final class AppModel {
     }
 
     func logout() async {
+        sessionGeneration = UUID()
+        let generation = sessionGeneration
+        profile = nil
+        sessionState = .signedOut
         collectionCache.reset()
         nasDownloads.reset()
         saveUserDataTask?.cancel()
         playback.stop()
-        await api.logout()
         webSocket.stop()
         keychain.delete(tokenKey)
         profile = nil
-        UserDefaults.standard.removeObject(forKey: profileKey)
+        preferences.removeObject(forKey: profileKey)
         clearAllCachedData()
         sessionState = .signedOut
+        await api.logout()
+        guard generation == sessionGeneration else { return }
+        await api.updateToken(nil)
     }
 
     func changeServer() async {
         await logout()
     }
 
-    func refreshAll(force: Bool = true) async {
+    func refreshAll(force: Bool = true, includeDiscovery: Bool = true) async {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") { return }
         #endif
         guard sessionState != .signedOut else { return }
+        let generation = sessionGeneration
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer { if generation == sessionGeneration { isRefreshing = false } }
         await refreshPlaybackSettings(force: force)
+        guard sessionGeneration == generation else { return }
         do {
             async let loadedTracks = api.tracks()
             async let loadedAlbums = api.albums()
@@ -211,6 +247,7 @@ final class AppModel {
             async let loadedSources = api.sources()
             async let loadedUserData = api.userData()
             let values = try await (loadedTracks, loadedAlbums, loadedArtists, loadedGenres, loadedSources, loadedUserData)
+            guard sessionGeneration == generation else { return }
             tracks = values.0
             albums = values.1
             artists = values.2
@@ -226,14 +263,15 @@ final class AppModel {
             cacheStore.save(genres, for: "library.genres", ttl: 10 * 60)
             cacheStore.save(sources, for: "search.sources", ttl: 24 * 60 * 60)
             cacheStore.save(userData, for: "library.userData")
+            cacheStore.removeValues(prefix: "carplay.library.page.")
+            libraryRevision = UUID()
             sessionState = .ready
-            await refreshDiscover(force: false)
+            if includeDiscovery { await refreshDiscover(force: false) }
         } catch LemonAPIClient.APIError.unauthorized {
-            collectionCache.reset()
-            nasDownloads.reset()
-            keychain.delete(tokenKey)
-            sessionState = .signedOut
+            guard sessionGeneration == generation else { return }
+            invalidateSession()
         } catch {
+            guard sessionGeneration == generation else { return }
             sessionState = tracks.isEmpty ? .offline : sessionState
             errorMessage = error.localizedDescription
         }
@@ -536,6 +574,60 @@ final class AppModel {
         await playback.play(track, in: queue)
     }
 
+    func play(at index: Int, in tracks: [MusicTrack]) async {
+        guard tracks.indices.contains(index) else { return }
+        recordRecentPlay(tracks[index])
+        await playback.play(at: index, in: tracks)
+    }
+
+    func playQueueEntry(id: UUID) async {
+        guard let entry = playback.queueEntries.first(where: { $0.id == id }) else { return }
+        recordRecentPlay(entry.track)
+        await playback.playQueueEntry(id: id)
+    }
+
+    func cachedCarPlayLibraryPage(_ page: Int) -> [MusicTrack]? {
+        if page == 1, !tracks.isEmpty { return tracks }
+        return cacheStore.value([MusicTrack].self, for: carPlayLibraryKey(page))
+    }
+
+    func carPlayLibraryPage(_ page: Int, force: Bool = false) async throws -> [MusicTrack] {
+        guard page > 0, sessionState != .signedOut else { throw LemonAPIClient.APIError.unauthorized }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") { return page == 1 ? tracks : [] }
+        #endif
+        let key = carPlayLibraryKey(page)
+        if !force, let cached = cacheStore.value([MusicTrack].self, for: key, allowExpired: false) { return cached }
+        let generation = sessionGeneration
+        do {
+            let loaded = try await api.tracks(page: page, limit: 200)
+            try Task.checkCancellation()
+            guard sessionGeneration == generation else { throw CancellationError() }
+            cacheStore.save(loaded, for: key, ttl: 10 * 60)
+            if page == 1 { tracks = loaded }
+            return loaded
+        } catch LemonAPIClient.APIError.unauthorized {
+            if sessionGeneration == generation { invalidateSession() }
+            throw LemonAPIClient.APIError.unauthorized
+        }
+    }
+
+    private func carPlayLibraryKey(_ page: Int) -> String {
+        page == 1 ? "library.tracks" : "carplay.library.page.\(page)"
+    }
+
+    private func invalidateSession() {
+        sessionGeneration = UUID()
+        isRefreshing = false
+        playback.stop()
+        webSocket.stop()
+        collectionCache.reset()
+        nasDownloads.reset()
+        saveUserDataTask?.cancel()
+        keychain.delete(tokenKey)
+        sessionState = .signedOut
+    }
+
     func toggleFavorite(_ track: MusicTrack) {
         if let index = userData.favorites.firstIndex(where: { $0.id == track.id }) {
             userData.favorites.remove(at: index)
@@ -640,6 +732,7 @@ final class AppModel {
     }
 
     private func connectWebSocket() {
+        guard !isInMemory else { return }
         Task { [weak self] in
             guard let self, let url = try? await self.api.webSocketURL() else { return }
             self.webSocket.connect(to: url)
@@ -677,16 +770,17 @@ final class AppModel {
     }
 
     private func loadProfile() -> ServerProfile? {
-        guard let data = UserDefaults.standard.data(forKey: profileKey) else { return nil }
+        guard let data = preferences.data(forKey: profileKey) else { return nil }
         return try? JSONDecoder().decode(ServerProfile.self, from: data)
     }
 
     private func saveProfile() {
         guard let profile, let data = try? JSONEncoder().encode(profile) else { return }
-        UserDefaults.standard.set(data, forKey: profileKey)
+        preferences.set(data, forKey: profileKey)
     }
 
     private func clearAllCachedData() {
+        isRefreshing = false
         localMatchTasks.values.forEach { $0.cancel() }
         localMatchTasks.removeAll()
         searchRequestID = nil

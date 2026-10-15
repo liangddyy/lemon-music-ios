@@ -8,11 +8,7 @@ struct LemonMusicApp: App {
     @State private var model: AppModel
 
     init() {
-        do {
-            _model = State(initialValue: try AppModel(inMemory: ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures")))
-        } catch {
-            fatalError("无法初始化本地数据库：\(error)")
-        }
+        _model = State(initialValue: AppRuntime.shared.model)
     }
 
     var body: some Scene {

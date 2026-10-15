@@ -4,7 +4,11 @@ import Foundation
 import Security
 
 nonisolated struct KeychainStore: Sendable {
-    private let service = "top.btop.music"
+    private let service: String
+
+    init(service: String = "top.btop.music") {
+        self.service = service
+    }
 
     func set(_ value: String, for key: String) throws {
         let data = Data(value.utf8)
@@ -46,4 +50,3 @@ nonisolated struct KeychainStore: Sendable {
 }
 
 nonisolated enum KeychainError: Error { case status(OSStatus) }
-

@@ -54,6 +54,13 @@ final class CacheStore {
         try? context.save()
     }
 
+    func removeValues(prefix: String) {
+        let context = container.mainContext
+        guard let entries = try? context.fetch(FetchDescriptor<CacheEntry>()) else { return }
+        for entry in entries where entry.key.hasPrefix(prefix) { context.delete(entry) }
+        try? context.save()
+    }
+
     func clearAll() {
         let context = container.mainContext
         try? context.delete(model: CacheEntry.self)

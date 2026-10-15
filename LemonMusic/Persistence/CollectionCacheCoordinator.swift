@@ -597,10 +597,3 @@ nonisolated final class CacheDownloadDelegate: NSObject, URLSessionDownloadDeleg
         MainActor.assumeIsolated { BackgroundCacheEvents.finish(session.configuration.identifier ?? "") }
     }
 }
-
-final class LemonAppDelegate: NSObject, UIApplicationDelegate {
-    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
-                     completionHandler: @escaping () -> Void) {
-        BackgroundCacheEvents.completionHandlers[identifier] = completionHandler
-    }
-}

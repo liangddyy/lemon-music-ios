@@ -26,6 +26,8 @@ final class PlaybackController {
     private(set) var currentTrack: MusicTrack?
     private var queueState = PlaybackQueue()
     var queue: [MusicTrack] { queueState.tracks }
+    var queueEntries: [PlaybackQueue.Entry] { queueState.ordered }
+    var currentEntryID: UUID? { queueState.current?.id }
     var currentIndex: Int { queueState.index }
     var mode: PlaybackMode { queueState.mode }
     private(set) var isPlaying = false
@@ -99,6 +101,7 @@ final class PlaybackController {
         observeAudioSession()
         configureRemoteCommands()
         restoreQueue()
+        updatePlaybackModeCommands()
         startProgressLoop()
     }
 
@@ -114,6 +117,21 @@ final class PlaybackController {
 
     func togglePlayPause() {
         isPlaying ? pause() : resume()
+    }
+
+    func play(at index: Int, in tracks: [MusicTrack]) async {
+        guard tracks.indices.contains(index) else { return }
+        queueState.replace(with: tracks, selectingAt: index)
+        await loadCurrentTrack(autoplay: true, forceRefresh: false)
+    }
+
+    func playQueueEntry(id: UUID) async {
+        guard queueState.select(entryID: id) else { return }
+        await loadCurrentTrack(autoplay: true, forceRefresh: false)
+    }
+
+    func publishNowPlaying() {
+        updateNowPlaying()
     }
 
     func pause() {
@@ -151,6 +169,8 @@ final class PlaybackController {
         duration = 0
         persistQueue()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
+        updatePlaybackModeCommands()
     }
 
     func resume() {
@@ -220,6 +240,7 @@ final class PlaybackController {
     func setMode(_ mode: PlaybackMode) {
         queueState.setMode(mode)
         persistQueue()
+        updatePlaybackModeCommands()
     }
 
     func cycleMode() { setMode(mode.next) }
@@ -439,11 +460,15 @@ final class PlaybackController {
                     if self.seekTarget == nil { self.position = max(0, progress) }
                 }
                 if duration.isFinite, duration > 0 { self.duration = duration }
-                self.isPlaying = !self.isAudioInterrupted && self.wantsPlayback && self.player.state == .playing && self.player.isEngineRunning
+                let playing = !self.isAudioInterrupted && self.wantsPlayback && self.player.state == .playing && self.player.isEngineRunning
+                let playbackChanged = self.isPlaying != playing
+                self.isPlaying = playing
                 self.isBuffering = !self.isAudioInterrupted && self.wantsPlayback && self.player.state == .bufferring
                 let seekable = !self.isAudioInterrupted && self.pendingSeek == nil && self.player.isSeekable
                     && (self.player.isEngineRunning || self.player.state == .paused)
-                if self.canSeek != seekable { self.canSeek = seekable; self.updateNowPlaying() }
+                let seekabilityChanged = self.canSeek != seekable
+                self.canSeek = seekable
+                if playbackChanged || seekabilityChanged { self.updateNowPlaying() }
                 if self.pendingSeek != nil, self.player.state == .playing, self.player.isSeekable,
                    let playbackID = self.playbackRequest.id { self.handleStarted(playbackID: playbackID) }
                 if Date().timeIntervalSince(self.lastPositionSave) >= 5 {
@@ -622,10 +647,40 @@ final class PlaybackController {
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             return self?.seek(to: event.positionTime) == true ? .success : .commandFailed
         }
+        commands.changeShuffleModeCommand.isEnabled = true
+        commands.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            self?.setMode(event.shuffleType == .off ? .sequential : .shuffled)
+            return .success
+        }
+        commands.changeRepeatModeCommand.isEnabled = true
+        commands.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            self?.setMode(event.repeatType == .one ? .repeatOne : .sequential)
+            return .success
+        }
+        updatePlaybackModeCommands()
+    }
+
+    private func updatePlaybackModeCommands() {
+        let commands = MPRemoteCommandCenter.shared()
+        let hasTrack = currentTrack != nil && !queue.isEmpty
+        commands.playCommand.isEnabled = hasTrack
+        commands.pauseCommand.isEnabled = hasTrack
+        commands.togglePlayPauseCommand.isEnabled = hasTrack
+        commands.nextTrackCommand.isEnabled = hasTrack
+        commands.previousTrackCommand.isEnabled = hasTrack
+        commands.changePlaybackPositionCommand.isEnabled = hasTrack && canSeek
+        commands.changeShuffleModeCommand.isEnabled = hasTrack
+        commands.changeRepeatModeCommand.isEnabled = hasTrack
+        commands.changeShuffleModeCommand.currentShuffleType = mode == .shuffled ? .items : .off
+        commands.changeRepeatModeCommand.currentRepeatType = mode == .repeatOne ? .one : .all
     }
 
     private func updateNowPlaying() {
+        updatePlaybackModeCommands()
         guard let track = currentTrack else { return }
+        MPNowPlayingInfoCenter.default().playbackState = isAudioInterrupted ? .interrupted : (isPlaying ? .playing : .paused)
         MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = canSeek
         let requestID = playbackRequest.id
         var info: [String: Any] = [
@@ -635,6 +690,10 @@ final class PlaybackController {
             MPMediaItemPropertyPlaybackDuration: max(duration, track.duration),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count,
+            MPNowPlayingInfoPropertyPlaybackQueueIndex: currentIndex,
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         artworkTask?.cancel()
