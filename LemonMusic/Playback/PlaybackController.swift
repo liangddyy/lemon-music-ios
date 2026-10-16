@@ -48,6 +48,7 @@ final class PlaybackController {
     private let defaults: UserDefaults
     private let audioPolicy: AudioPlaybackPolicy?
     private let startupTimeout: Duration
+    private let activateSession: () throws -> Void
     private let logger = Logger(subsystem: "top.btop.music", category: "Playback")
     private var progressTask: Task<Void, Never>?
     private var retryingCurrentItem = false
@@ -72,7 +73,8 @@ final class PlaybackController {
     init(
         api: LemonAPIClient, audioCache: AudioCache, artworkStore: ArtworkStore,
         defaults: UserDefaults = .standard, audioPolicy: AudioPlaybackPolicy? = nil,
-        startupTimeout: Duration = .seconds(45)
+        startupTimeout: Duration = .seconds(45),
+        activateSession: @escaping () throws -> Void = { try AVAudioSession.sharedInstance().setActive(true) }
     ) {
         self.api = api
         self.audioCache = audioCache
@@ -80,6 +82,7 @@ final class PlaybackController {
         self.defaults = defaults
         self.audioPolicy = audioPolicy
         self.startupTimeout = startupTimeout
+        self.activateSession = activateSession
 
         let player = Self.makePlayer(cache: audioCache)
         let delegate = LemonAudioPlayerDelegate()
@@ -106,6 +109,7 @@ final class PlaybackController {
     }
 
     func play(_ track: MusicTrack, in tracks: [MusicTrack]? = nil) async {
+        guard recoverInterruptionForUserPlayback() else { return }
         if let tracks, let index = tracks.firstIndex(of: track) {
             queueState.replace(with: tracks, selecting: tracks[index])
         } else if queueState.select(track) {
@@ -121,11 +125,13 @@ final class PlaybackController {
 
     func play(at index: Int, in tracks: [MusicTrack]) async {
         guard tracks.indices.contains(index) else { return }
+        guard recoverInterruptionForUserPlayback() else { return }
         queueState.replace(with: tracks, selectingAt: index)
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
     func playQueueEntry(id: UUID) async {
+        guard queueEntries.contains(where: { $0.id == id }), recoverInterruptionForUserPlayback() else { return }
         guard queueState.select(entryID: id) else { return }
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
@@ -173,16 +179,27 @@ final class PlaybackController {
         updatePlaybackModeCommands()
     }
 
-    func resume() {
-        guard !isLoadingTrack, !isAudioInterrupted else { return }
+    func resume(isUserInitiated: Bool = true) {
         guard currentTrack != nil, !queue.isEmpty else {
             reportFailure("没有可播放的歌曲，请重新选择歌曲", code: "empty-queue")
             return
         }
+        if isUserInitiated {
+            guard recoverInterruptionForUserPlayback() else { return }
+        }
+        guard !isLoadingTrack, !isAudioInterrupted else { return }
         let stoppedEngine = !player.isEngineRunning && player.state != .paused
         if !engineHasEntry || stoppedEngine || lastError != nil || (duration > 0 && position >= duration - 0.5) {
+            wantsPlayback = true
             let resumeAt = lastError == nil && !(duration > 0 && position >= duration - 0.5) ? position : 0
-            Task { await loadCurrentTrack(autoplay: true, forceRefresh: lastError != nil, resumeAt: resumeAt) }
+            let requestID = playbackRequest.id
+            let entryID = currentEntryID
+            let forceRefresh = lastError != nil
+            Task {
+                guard self.playbackRequest.id == requestID, self.currentEntryID == entryID,
+                      self.wantsPlayback, !self.isAudioInterrupted else { return }
+                await self.loadCurrentTrack(autoplay: true, forceRefresh: forceRefresh, resumeAt: resumeAt)
+            }
             return
         }
         do { try activateAudioSession() }
@@ -195,12 +212,21 @@ final class PlaybackController {
 
     func next() async {
         guard !queue.isEmpty else { return }
+        guard recoverInterruptionForUserPlayback() else { return }
         queueState.advance(natural: false)
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
 
     func previous() async {
-        if position > 3 { seek(to: 0); return }
+        guard !queue.isEmpty, recoverInterruptionForUserPlayback() else { return }
+        if position > 3 {
+            if seek(to: 0) {
+                if !isPlaying { resume() }
+            } else {
+                await loadCurrentTrack(autoplay: true, forceRefresh: false)
+            }
+            return
+        }
         queueState.retreat()
         await loadCurrentTrack(autoplay: true, forceRefresh: false)
     }
@@ -572,11 +598,31 @@ final class PlaybackController {
             if isLoadingTrack { return }
             // Rebuild playback at the saved position if the audio engine was stopped by the system.
             engineHasEntry = false
-            resume()
+            resume(isUserInitiated: false)
         } else {
             wantsPlayback = false
             updateNowPlaying()
         }
+    }
+
+    private func recoverInterruptionForUserPlayback() -> Bool {
+        guard isAudioInterrupted else { return true }
+        do { try activateAudioSession() }
+        catch {
+            reportFailure(error.localizedDescription, code: "session-interruption-recovery")
+            return false
+        }
+        // An ended notification may never arrive. Only a successful explicit activation clears the interruption.
+        isAudioInterrupted = false
+        resumeAfterInterruption = false
+        startupWatchdog?.cancel()
+        playbackRequest = PlaybackRequestState()
+        isLoadingTrack = false
+        engineHasEntry = false
+        pendingSeek = nil
+        seekTarget = nil
+        player.stop()
+        return true
     }
 
     private func activateAudioSession() throws {
@@ -589,7 +635,7 @@ final class PlaybackController {
             throw AudioSessionSetupError(stage: "音频会话配置", underlying: error as NSError)
         }
         do {
-            try session.setActive(true)
+            try activateSession()
         } catch {
             throw AudioSessionSetupError(stage: "音频输出激活", underlying: error as NSError)
         }

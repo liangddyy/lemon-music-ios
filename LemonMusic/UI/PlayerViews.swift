@@ -53,7 +53,7 @@ struct MiniPlayerView: View {
                     .frame(width: isInline ? 32 : 38, height: isInline ? 32 : 38)
             }
             .accessibilityLabel(model.playback.isPlaying ? "暂停" : "播放")
-            .disabled(model.playback.isLoadingTrack)
+            .disabled(model.playback.isLoadingTrack && !model.playback.isAudioInterrupted)
 
             if !isInline {
                 Button { Task { await model.playback.next() } } label: {
@@ -262,7 +262,7 @@ struct FullPlayerView: View {
                 Image(systemName: model.playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 72))
             }
-            .disabled(model.playback.isLoadingTrack || model.playback.isAudioInterrupted)
+            .disabled(model.playback.isLoadingTrack && !model.playback.isAudioInterrupted)
             .accessibilityIdentifier("player.playPause")
             .accessibilityLabel(model.playback.isPlaying ? "暂停" : "播放")
             Button { Task { await model.playback.next() } } label: {

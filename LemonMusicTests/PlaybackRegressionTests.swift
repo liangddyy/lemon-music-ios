@@ -5,6 +5,142 @@ import Testing
 
 @Suite(.serialized)
 struct PlaybackRegressionTests {
+    private enum RecoveryAction: CaseIterable {
+        case resume, next, previous, previousFromStart, selectTrack, selectQueueEntry
+    }
+
+    @MainActor @Test(arguments: RecoveryAction.allCases)
+    private func userPlaybackRecoversWithoutInterruptionEnded(action: RecoveryAction) async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = "interruption-recovery.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults)
+        defer { player.stop(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let songs = try (0..<3).map { try track(id: UUID().uuidString, title: "Song \($0)", artist: "Artist", duration: 20) }
+        for song in songs {
+            let file = root.appendingPathComponent(UUID().uuidString)
+            try silentWAV().write(to: file)
+            _ = try cache.storeDownloadedFile(at: file, key: song.id, mimeType: "audio/wav", protectedKey: nil)
+        }
+        await player.play(songs[1], in: songs)
+        for _ in 0..<100 where !player.canSeek { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(player.seek(to: action == .previousFromStart ? 1 : 5))
+        try await Task.sleep(for: .milliseconds(200))
+        player.handleInterruptionBegan()
+        let saved = player.position
+        #expect(player.isAudioInterrupted)
+        #expect(!player.isPlaying)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!player.isPlaying)
+
+        let expectedIndex: Int
+        switch action {
+        case .resume:
+            expectedIndex = 1
+            player.resume()
+        case .next:
+            expectedIndex = 2
+            await player.next()
+        case .previous:
+            expectedIndex = 1
+            await player.previous()
+        case .previousFromStart:
+            expectedIndex = 0
+            await player.previous()
+        case .selectTrack:
+            expectedIndex = 0
+            await player.play(songs[0], in: songs)
+        case .selectQueueEntry:
+            expectedIndex = 0
+            await player.playQueueEntry(id: player.queueEntries[0].id)
+        }
+        for _ in 0..<100 where !player.isPlaying || !player.canSeek || player.isLoadingTrack {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(!player.isAudioInterrupted)
+        #expect(player.isPlaying)
+        #expect(player.canSeek)
+        #expect(player.lastError == nil)
+        #expect(player.currentIndex == expectedIndex)
+        #expect(player.currentTrack?.id == songs[expectedIndex].id)
+        if action == .resume { #expect(player.position >= saved - 0.5) }
+        else { #expect(player.position < 3) }
+        // A late end for the old interruption must not stop the explicitly restarted track.
+        player.handleInterruptionEnded(shouldResume: false)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(player.isPlaying)
+        #expect(player.currentIndex == expectedIndex)
+    }
+
+    @MainActor @Test func deniedSessionActivationKeepsInterruptionAndQueueRetryable() async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = "interruption-denied.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let songs = try (0..<2).map { try track(id: UUID().uuidString, title: "Song \($0)", artist: "Artist", duration: 20) }
+        var queue = PlaybackQueue()
+        queue.replace(with: songs, selecting: songs[0])
+        defaults.set(try JSONEncoder().encode(queue), forKey: "lemon.playback.state")
+        defaults.set(5.0, forKey: "lemon.playback.position")
+        let player = PlaybackController(
+            api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults,
+            activateSession: { throw URLError(.cannotConnectToHost) }
+        )
+        defer { player.stop(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        player.handleInterruptionBegan()
+        player.resume()
+        await player.next()
+        await player.previous()
+        #expect(player.isAudioInterrupted)
+        #expect(!player.isPlaying)
+        #expect(!player.isLoadingTrack)
+        #expect(player.lastError != nil)
+        #expect(player.currentIndex == 0)
+        #expect(player.position == 5)
+    }
+
+    @MainActor @Test(arguments: [true, false])
+    func newerUserActionWinsOverPendingInterruptionResume(skip: Bool) async throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = AudioCache(container: store.container, root: root)
+        let name = "interruption-skip.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let player = PlaybackController(api: LemonAPIClient(), audioCache: cache, artworkStore: ArtworkStore(), defaults: defaults)
+        defer { player.stop(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let songs = try (0..<2).map { try track(id: UUID().uuidString, title: "Song \($0)", artist: "Artist", duration: 20) }
+        for song in songs {
+            let file = root.appendingPathComponent(UUID().uuidString)
+            try silentWAV().write(to: file)
+            _ = try cache.storeDownloadedFile(at: file, key: song.id, mimeType: "audio/wav", protectedKey: nil)
+        }
+        await player.play(songs[0], in: songs)
+        for _ in 0..<100 where !player.canSeek { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(player.seek(to: 5))
+        try await Task.sleep(for: .milliseconds(200))
+        player.handleInterruptionBegan()
+        if skip {
+            player.resume()
+            await player.next()
+            for _ in 0..<100 where !player.canSeek || !player.isPlaying { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(player.currentTrack?.id == songs[1].id)
+            #expect(player.currentIndex == 1)
+            #expect(player.position < 3)
+            #expect(player.isPlaying)
+        } else {
+            player.handleInterruptionEnded(shouldResume: true)
+            player.pause()
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(player.currentIndex == 0)
+            #expect(!player.isPlaying)
+            #expect(!player.isLoadingTrack)
+        }
+        #expect(!player.isAudioInterrupted)
+    }
+
     @MainActor @Test(arguments: [true, false])
     func interruptionPausesUIAndOnlyResumesWhenAllowed(shouldResume: Bool) async throws {
         let store = try CacheStore(inMemory: true)
