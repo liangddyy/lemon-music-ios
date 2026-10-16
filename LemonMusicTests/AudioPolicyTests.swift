@@ -90,6 +90,7 @@ struct AudioPolicyTests {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
         let cache = AudioCache(container: store.container, root: root, defaults: defaults)
+        cache.automaticCachingEnabled = true
         let online = try #require(MusicTrack(json: .object(["source": .string("wy"), "songId": .string("1")])))
         let low = AudioVariant.key(for: online, quality: "128k")
         let high = AudioVariant.key(for: online, quality: "320k")

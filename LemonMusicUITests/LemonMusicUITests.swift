@@ -29,9 +29,9 @@ final class LemonMusicUITests: XCTestCase {
         app.buttons["设置"].tap()
         let automatic = app.switches["settings.automaticCache"]
         XCTAssertTrue(automatic.waitForExistence(timeout: 5))
-        XCTAssertEqual(automatic.value as? String, "1")
-        automatic.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(automatic.value as? String, "0")
+        automatic.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(automatic.value as? String, "1")
         let limit = app.buttons["settings.cacheLimit"]
         XCTAssertTrue(limit.waitForExistence(timeout: 5))
         limit.tap()
@@ -44,7 +44,7 @@ final class LemonMusicUITests: XCTestCase {
         XCTAssertTrue(app.buttons["设置"].waitForExistence(timeout: 10))
         app.buttons["设置"].tap()
         XCTAssertTrue(automatic.waitForExistence(timeout: 5))
-        XCTAssertEqual(automatic.value as? String, "0")
+        XCTAssertEqual(automatic.value as? String, "1")
         XCTAssertTrue(limit.label.contains("1 GB"))
     }
 

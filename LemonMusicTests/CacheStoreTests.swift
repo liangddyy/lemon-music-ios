@@ -5,6 +5,24 @@ import Testing
 
 @MainActor
 struct CacheStoreTests {
+    @Test func automaticCacheDefaultsOffAndPreservesExplicitChoices() throws {
+        let store = try CacheStore(inMemory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let name = UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        let cache = AudioCache(container: store.container, root: root, defaults: defaults)
+        #expect(!cache.automaticCachingEnabled)
+        cache.streamCache.configure(key: "song", totalLength: 4_096, mimeType: "audio/mpeg", headerLength: 0, remoteDataOffset: 0)
+        cache.streamCache.store(data: Data(repeating: 65, count: 2_048), at: 0, for: "song")
+        #expect(cache.streamCache.cachedByteCount(for: "song") == 0)
+        #expect(!AudioCache(container: store.container, root: root, defaults: defaults).automaticCachingEnabled)
+        cache.automaticCachingEnabled = true
+        #expect(AudioCache(container: store.container, root: root, defaults: defaults).automaticCachingEnabled)
+        cache.automaticCachingEnabled = false
+        #expect(!AudioCache(container: store.container, root: root, defaults: defaults).automaticCachingEnabled)
+    }
+
     @Test func cacheLimitIsObservablePersistsAndEvictsOldestFile() throws {
         let store = try CacheStore(inMemory: true)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -35,6 +53,7 @@ struct CacheStoreTests {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
         let cache = AudioCache(container: store.container, root: root, defaults: defaults)
+        cache.automaticCachingEnabled = true
         let stream = cache.streamCache
         stream.configure(key: "song", totalLength: 4_096, mimeType: "audio/mpeg", headerLength: 0, remoteDataOffset: 0)
         stream.store(data: Data(repeating: 65, count: 2_048), at: 0, for: "song")

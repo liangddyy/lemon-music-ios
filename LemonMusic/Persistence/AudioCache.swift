@@ -49,7 +49,7 @@ final class AudioCache {
         self.container = container
         self.defaults = defaults
         maxBytes = (defaults.object(forKey: "lemon.audioCache.maxBytes") as? NSNumber)?.int64Value ?? Self.defaultMaxBytes
-        automaticCachingEnabled = defaults.object(forKey: "lemon.audioCache.automatic") as? Bool ?? true
+        automaticCachingEnabled = defaults.object(forKey: "lemon.audioCache.automatic") as? Bool ?? false
         let root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("lemon-music", isDirectory: true)
         directory = root.appendingPathComponent("audio", isDirectory: true)
