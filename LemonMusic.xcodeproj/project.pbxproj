@@ -7,10 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D01100000000000000000001 /* LemonMusicWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D01100000000000000000004 /* LemonMusicWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DB2EFE092FBF805C00C2C11F /* AudioStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = DB2EFE082FBF805C00C2C11F /* AudioStreaming */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		D01100000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D01100000000000000000009;
+			remoteInfo = LemonMusicWidgets;
+		};
 		DBA4A75F2F9BBFCC008BC5A9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DBA4A7492F9BBFCB008BC5A9 /* Project object */;
@@ -27,13 +35,31 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		D01100000000000000000003 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (D01100000000000000000001 /* LemonMusicWidgets.appex in Embed App Extensions */, );
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		D01100000000000000000004 /* LemonMusicWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LemonMusicWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LemonMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D01100000000000000000005 /* Exceptions for LemonMusicWidgets */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (Info.plist, );
+			target = D01100000000000000000009 /* LemonMusicWidgets */;
+		};
 		DBA4A8F62F9C0A1F008BC5A9 /* Exceptions for "LemonMusic" folder in "LemonMusic" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -44,6 +70,17 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D01100000000000000000006 /* LemonMusicWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (D01100000000000000000005 /* Exceptions for LemonMusicWidgets */, );
+			path = LemonMusicWidgets;
+			sourceTree = "<group>";
+		};
+		D01100000000000000000007 /* WidgetShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WidgetShared;
+			sourceTree = "<group>";
+		};
 		DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -65,6 +102,12 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		D01100000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DBA4A74E2F9BBFCB008BC5A9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -94,6 +137,8 @@
 			isa = PBXGroup;
 			children = (
 				DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */,
+				D01100000000000000000006 /* LemonMusicWidgets */,
+				D01100000000000000000007 /* WidgetShared */,
 				DBA4A7612F9BBFCC008BC5A9 /* LemonMusicTests */,
 				DBA4A76B2F9BBFCC008BC5A9 /* LemonMusicUITests */,
 				DBA4A7522F9BBFCB008BC5A9 /* Products */,
@@ -104,6 +149,7 @@
 			isa = PBXGroup;
 			children = (
 				DBA4A7512F9BBFCB008BC5A9 /* LemonMusic.app */,
+				D01100000000000000000004 /* LemonMusicWidgets.appex */,
 				DBA4A75E2F9BBFCC008BC5A9 /* LemonMusicTests.xctest */,
 				DBA4A7682F9BBFCC008BC5A9 /* LemonMusicUITests.xctest */,
 			);
@@ -113,6 +159,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D01100000000000000000009 /* LemonMusicWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0110000000000000000000F /* Widget configurations */;
+			buildPhases = (
+				D0110000000000000000000A /* Sources */,
+				D01100000000000000000008 /* Frameworks */,
+				D0110000000000000000000B /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (
+				D01100000000000000000006 /* LemonMusicWidgets */,
+				D01100000000000000000007 /* WidgetShared */,
+			);
+			name = LemonMusicWidgets;
+			packageProductDependencies = ();
+			productName = LemonMusicWidgets;
+			productReference = D01100000000000000000004 /* LemonMusicWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DBA4A7722F9BBFCC008BC5A9 /* Build configuration list for PBXNativeTarget "LemonMusic" */;
@@ -120,13 +186,16 @@
 				DBA4A74D2F9BBFCB008BC5A9 /* Sources */,
 				DBA4A74E2F9BBFCB008BC5A9 /* Frameworks */,
 				DBA4A74F2F9BBFCB008BC5A9 /* Resources */,
+				D01100000000000000000003 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D0110000000000000000000C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				DBA4A7532F9BBFCB008BC5A9 /* LemonMusic */,
+				D01100000000000000000007 /* WidgetShared */,
 			);
 			name = LemonMusic;
 			packageProductDependencies = (
@@ -192,6 +261,9 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					D01100000000000000000009 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					DBA4A7502F9BBFCB008BC5A9 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -224,6 +296,7 @@
 			projectRoot = "";
 			targets = (
 				DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */,
+				D01100000000000000000009 /* LemonMusicWidgets */,
 				DBA4A75D2F9BBFCC008BC5A9 /* LemonMusicTests */,
 				DBA4A7672F9BBFCC008BC5A9 /* LemonMusicUITests */,
 			);
@@ -231,6 +304,12 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D0110000000000000000000B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DBA4A74F2F9BBFCB008BC5A9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -255,6 +334,12 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D0110000000000000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DBA4A74D2F9BBFCB008BC5A9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -279,6 +364,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		D0110000000000000000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D01100000000000000000009 /* LemonMusicWidgets */;
+			targetProxy = D01100000000000000000002 /* PBXContainerItemProxy */;
+		};
 		DBA4A7602F9BBFCC008BC5A9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DBA4A7502F9BBFCB008BC5A9 /* LemonMusic */;
@@ -292,6 +382,58 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		D0110000000000000000000D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LemonMusicWidgets/LemonMusicWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LemonMusicWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "柠檬音乐";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) WIDGET_EXTENSION";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D0110000000000000000000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LemonMusicWidgets/LemonMusicWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MSRV7PSAMR;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LemonMusicWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "柠檬音乐";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) WIDGET_EXTENSION";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		DBA4A7702F9BBFCC008BC5A9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -445,7 +587,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music;
 				PRODUCT_NAME = LemonMusic;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -492,7 +634,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = top.btop.music;
 				PRODUCT_NAME = LemonMusic;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -621,6 +763,12 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		D0110000000000000000000F /* Widget configurations */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (D0110000000000000000000D /* Debug */, D0110000000000000000000E /* Release */, );
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		DBA4A74C2F9BBFCB008BC5A9 /* Build configuration list for PBXProject "LemonMusic" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

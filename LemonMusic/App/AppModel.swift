@@ -2,13 +2,16 @@
 
 import Foundation
 import Observation
+import UIKit
 
 @Observable
 @MainActor
 final class AppModel {
     enum SessionState { case loading, signedOut, ready, offline }
 
-    private(set) var sessionState: SessionState = .loading
+    private(set) var sessionState: SessionState = .loading {
+        didSet { publishWidget() }
+    }
     private(set) var profile: ServerProfile?
     private(set) var tracks: [MusicTrack] = []
     private(set) var albums: [MusicAlbum] = []
@@ -54,6 +57,7 @@ final class AppModel {
     private let tokenKey = "session-token"
     private let preferences: UserDefaults
     private let isInMemory: Bool
+    private let widgetPublisher: PlaybackWidgetPublisher?
     private var saveUserDataTask: Task<Void, Never>?
     private var discoverRequests: [String: UUID] = [:]
     private var localMatchTasks: [String: Task<MusicTrack?, Never>] = [:]
@@ -73,6 +77,7 @@ final class AppModel {
         self.keychain = keychain
         isInMemory = inMemory
         let arguments = ProcessInfo.processInfo.arguments
+        widgetPublisher = inMemory ? nil : PlaybackWidgetPublisher()
         let persistentFixture = inMemory && arguments.contains("-uiTestingPersistentPlayback")
         let suite = persistentFixture ? "lemon.ui.playback-restoration" : "lemon.tests.\(UUID())"
         preferences = defaults ?? (inMemory ? UserDefaults(suiteName: suite)! : .standard)
@@ -106,6 +111,7 @@ final class AppModel {
         nasDownloads.preferredTrack = { [weak self] track in await self?.preferredLocalTrack(for: track) ?? track }
         playback.willPlayTrack = { [weak self] track in await self?.collectionCache.givePlaybackPriority(to: track) }
         playback.onTrackChanged = { [weak self] in self?.collectionCache.pump() }
+        playback.onNowPlayingChanged = { [weak self] artwork in self?.publishWidget(artwork: artwork) }
         webSocket.onEvent = { [weak self] type in self?.handleWebSocketEvent(type) }
         if ProcessInfo.processInfo.arguments.contains("-uiTestingReset") {
             keychain.delete(tokenKey)
@@ -119,6 +125,14 @@ final class AppModel {
     }
 
     var favoriteIDs: Set<String> { Set(userData.favorites.map(\.id)) }
+
+    private func publishWidget(artwork: UIImage? = nil) {
+        guard sessionState != .loading else { return }
+        widgetPublisher?.update(
+            track: playback.currentTrack, isPlaying: playback.isPlaying,
+            isSignedIn: sessionState == .ready || sessionState == .offline, artwork: artwork
+        )
+    }
     var recentTracks: [MusicTrack] { userData.recentPlays }
     var recentlyAdded: [MusicTrack] {
         tracks.sorted { ($0.modifiedAt ?? 0) > ($1.modifiedAt ?? 0) }.prefix(30).map { $0 }
@@ -655,6 +669,15 @@ final class AppModel {
     func lyrics(for track: MusicTrack) async -> String {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uiTestingFixtures") {
+            if ProcessInfo.processInfo.arguments.contains("-uiTestingDelayedLyrics") {
+                try? await Task.sleep(for: .seconds(8))
+            }
+            if ProcessInfo.processInfo.arguments.contains("-uiTestingLongLyrics") {
+                return (0..<40).map { index in
+                    let suffix = index.isMultiple(of: 3) ? "，这是一段用于检验多行歌词定位的较长歌词" : ""
+                    return String(format: "[00:%05.2f]歌词第 %d 行%@", Double(index) * 0.5, index + 1, suffix)
+                }.joined(separator: "\n")
+            }
             return "[00:00.00]柠檬音乐\n[00:05.00]夜色里的旋律\n[00:10.00]让音乐陪伴每一天"
         }
         #endif
@@ -810,7 +833,11 @@ final class AppModel {
 
     #if DEBUG
     private func loadUITestFixtures() async {
-        tracks = ["夜曲", "晴天", "稻香"].enumerated().compactMap { index, name in
+        var names = ["夜曲", "晴天", "稻香"]
+        if ProcessInfo.processInfo.arguments.contains("-uiTestingLongPlaylist") {
+            names += (4...24).map { "测试歌曲 \($0)" }
+        }
+        tracks = names.enumerated().compactMap { index, name in
             MusicTrack(json: .object([
                 "filePath": .string("/fixtures/\(index).wav"), "title": .string(name),
                 "artist": .string("周杰伦"), "album": .string("精选"), "duration": .number(20),

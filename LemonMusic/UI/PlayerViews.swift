@@ -497,6 +497,8 @@ private struct PlayerLyricsView: View {
                                     .frame(maxWidth: .infinity)
                                     .scaleEffect(isActive ? 1 : 0.96)
                                     .animation(.easeInOut(duration: 0.25), value: activeLineID)
+                                    .accessibilityIdentifier("player.lyric.\(line.id)")
+                                    .accessibilityValue(isActive ? "当前歌词" : "")
                                     .id(line.id)
                             }
                             Spacer().frame(height: geometry.size.height / 2)

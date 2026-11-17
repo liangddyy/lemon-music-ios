@@ -117,6 +117,29 @@ final class LemonMusicUITests: XCTestCase {
         XCTAssertTrue(tabBar.buttons["发现"].isHittable)
     }
 
+    func testPlaylistLastTrackStaysAboveMiniPlayer() {
+        let app = fixtures(extra: ["-uiTestingLongPlaylist"])
+        for _ in 0..<3 where !app.staticTexts["我的精选"].firstMatch.isHittable { app.swipeUp() }
+        app.staticTexts["我的精选"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["collection.playAll"].waitForExistence(timeout: 5))
+
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        for _ in 0..<6 { list.swipeUp() }
+        let lastTrack = app.buttons["track.play.local:/fixtures/23.wav"]
+        XCTAssertTrue(lastTrack.isHittable)
+        XCTAssertLessThanOrEqual(lastTrack.frame.maxY, app.tabBars.firstMatch.frame.minY)
+        lastTrack.tap()
+
+        let miniPlayer = app.buttons["miniPlayer.open"]
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        for _ in 0..<2 { list.swipeUp() }
+        XCTAssertTrue(lastTrack.isHittable)
+        XCTAssertLessThanOrEqual(lastTrack.frame.maxY, miniPlayer.frame.minY)
+        XCTAssertLessThanOrEqual(miniPlayer.frame.maxY, app.tabBars.firstMatch.frame.minY)
+        attachment(app, name: "playlist-last-track-above-mini-player")
+    }
+
     private func tabButton(_ title: String, in tabBar: XCUIElement) -> XCUIElement {
         if title == "搜索" {
             return tabBar.buttons.matching(NSPredicate(format: "label IN %@", ["搜索", "Search"])).firstMatch
@@ -194,6 +217,70 @@ final class LemonMusicUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertEqual(toggle.value as? String, "0")
         app.buttons["完成"].tap()
+    }
+
+    func testLyricsFollowPlaybackAndSeek() {
+        let app = fixtures(extra: ["-uiTestingLongLyrics"])
+        app.buttons["track.play.local:/fixtures/0.wav"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.buttons["miniPlayer.open"].tap()
+        let media = app.descendants(matching: .any).matching(identifier: "player.media").firstMatch
+        XCTAssertTrue(media.waitForExistence(timeout: 5))
+        media.swipeLeft()
+        let lyrics = app.descendants(matching: .any).matching(identifier: "player.lyrics").firstMatch
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
+        let active = app.staticTexts.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value == %@", "player.lyric.", "当前歌词"
+        )).firstMatch
+        XCTAssertTrue(active.waitForExistence(timeout: 5))
+        let initialLabel = active.label
+        expectation(for: NSPredicate(format: "label != %@", initialLabel), evaluatedWith: active)
+        waitForExpectations(timeout: 5)
+        Thread.sleep(forTimeInterval: 0.4)
+        XCTAssertLessThan(abs(active.frame.midY - lyrics.frame.midY), 45)
+
+        let playPause = app.buttons["player.playPause"]
+        if playPause.label == "暂停" { playPause.tap() }
+        let progress = app.sliders["player.progress"]
+        progress.adjust(toNormalizedSliderPosition: 0.85)
+        expectation(for: NSPredicate(format: "identifier MATCHES %@", "player.lyric.3[4-6]"), evaluatedWith: active)
+        waitForExpectations(timeout: 5)
+        let target = app.staticTexts[active.identifier]
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertTrue(target.isHittable)
+        XCTAssertLessThan(abs(target.frame.midY - lyrics.frame.midY), 45)
+        attachment(app, name: "lyrics-follow-playback-and-seek")
+
+        lyrics.swipeRight()
+        XCTAssertTrue(media.waitForExistence(timeout: 3))
+        media.swipeLeft()
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
+        XCTAssertTrue(target.waitForExistence(timeout: 3))
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertLessThan(abs(target.frame.midY - lyrics.frame.midY), 45)
+        attachment(app, name: "lyrics-follow-when-reopened")
+    }
+
+    func testDelayedLyricsStartAtCurrentPlaybackPosition() {
+        let app = fixtures(extra: ["-uiTestingLongLyrics", "-uiTestingDelayedLyrics"])
+        app.buttons["track.play.local:/fixtures/0.wav"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["miniPlayer.open"].waitForExistence(timeout: 5))
+        app.buttons["miniPlayer.open"].tap()
+        let playPause = app.buttons["player.playPause"]
+        XCTAssertTrue(playPause.waitForExistence(timeout: 5))
+        if playPause.label == "暂停" { playPause.tap() }
+        app.sliders["player.progress"].adjust(toNormalizedSliderPosition: 0.85)
+        app.descendants(matching: .any).matching(identifier: "player.media").firstMatch.swipeLeft()
+        let lyrics = app.descendants(matching: .any).matching(identifier: "player.lyrics").firstMatch
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
+        let active = app.staticTexts.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value == %@", "player.lyric.", "当前歌词"
+        )).firstMatch
+        XCTAssertTrue(active.waitForExistence(timeout: 12))
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertTrue(active.isHittable)
+        XCTAssertLessThan(abs(active.frame.midY - lyrics.frame.midY), 45)
+        attachment(app, name: "delayed-lyrics-at-current-position")
     }
 
     func testLyricsFillAreaAboveProgressAndHideTrackMetadata() {

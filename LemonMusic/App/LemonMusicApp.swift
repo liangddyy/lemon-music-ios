@@ -17,6 +17,13 @@ struct LemonMusicApp: App {
                 .environment(model)
                 .tint(Color(red: 1.0, green: 0.43, blue: 0.08))
                 .task { await model.bootstrap() }
+                .onOpenURL { url in
+                    guard url.scheme == "lemonmusic", url.host == "player" else { return }
+                    Task {
+                        await model.bootstrap(includeDiscovery: false)
+                        if model.playback.currentTrack != nil { model.playback.showingFullPlayer = true }
+                    }
+                }
                 .modifier(UITestPresentation())
         }
     }

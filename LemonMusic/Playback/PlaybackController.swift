@@ -39,6 +39,7 @@ final class PlaybackController {
     var preferredTrack: ((MusicTrack) async -> MusicTrack)?
     var willPlayTrack: ((MusicTrack) async -> Void)?
     var onTrackChanged: (() -> Void)?
+    var onNowPlayingChanged: ((UIImage?) -> Void)?
 
     @ObservationIgnored private nonisolated(unsafe) var player: AudioPlayer
     private let playerDelegate: LemonAudioPlayerDelegate
@@ -176,6 +177,7 @@ final class PlaybackController {
         persistQueue()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
+        onNowPlayingChanged?(nil)
         updatePlaybackModeCommands()
     }
 
@@ -725,6 +727,7 @@ final class PlaybackController {
 
     private func updateNowPlaying() {
         updatePlaybackModeCommands()
+        onNowPlayingChanged?(nil)
         guard let track = currentTrack else { return }
         MPNowPlayingInfoCenter.default().playbackState = isAudioInterrupted ? .interrupted : (isPlaying ? .playing : .paused)
         MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = canSeek
@@ -751,6 +754,7 @@ final class PlaybackController {
             info[MPMediaItemPropertyPlaybackDuration] = max(self.duration, track.duration)
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            self.onNowPlayingChanged?(image)
         }
     }
 

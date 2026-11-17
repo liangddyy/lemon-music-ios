@@ -5,7 +5,10 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedTab: AppTab = .home
-    @State private var showingPlayer = false
+    private var showingPlayer: Bool { model.playback.showingFullPlayer }
+    private var playerPresentation: Binding<Bool> {
+        Binding(get: { model.playback.showingFullPlayer }, set: { model.playback.showingFullPlayer = $0 })
+    }
 
     private enum AppTab: Hashable { case home, discover, library, search }
 
@@ -14,20 +17,20 @@ struct MainTabView: View {
             if #available(iOS 26.1, *) {
                 tabs
                     .tabViewBottomAccessory(isEnabled: model.playback.currentTrack != nil) {
-                        TabBarMiniPlayer(showingPlayer: $showingPlayer)
+                        TabBarMiniPlayer(showingPlayer: playerPresentation)
                     }
             } else if #available(iOS 26.0, *) {
                 tabs
                     .tabViewBottomAccessory {
                         if model.playback.currentTrack != nil {
-                            TabBarMiniPlayer(showingPlayer: $showingPlayer)
+                            TabBarMiniPlayer(showingPlayer: playerPresentation)
                         }
                     }
             } else {
                 tabs
             }
         }
-        .fullScreenCover(isPresented: $showingPlayer) {
+        .fullScreenCover(isPresented: playerPresentation) {
             FullPlayerView()
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -70,25 +73,25 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             Tab("首页", systemImage: "house.fill", value: AppTab.home) {
                 NavigationStack { HomeView() }
-                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
+                    .modifier(LegacyMiniPlayerLayout(showingPlayer: playerPresentation))
             }
             Tab("发现", systemImage: "sparkles", value: AppTab.discover) {
                 NavigationStack { DiscoverView() }
-                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
+                    .modifier(LegacyMiniPlayerLayout(showingPlayer: playerPresentation))
             }
             Tab("音乐库", systemImage: "music.note.list", value: AppTab.library) {
                 NavigationStack { LibraryView() }
-                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
+                    .modifier(LegacyMiniPlayerLayout(showingPlayer: playerPresentation))
             }
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack { SearchView() }
-                    .modifier(LegacyMiniPlayerInset(showingPlayer: $showingPlayer))
+                    .modifier(LegacyMiniPlayerLayout(showingPlayer: playerPresentation))
             }
         }
     }
 }
 
-private struct LegacyMiniPlayerInset: ViewModifier {
+private struct LegacyMiniPlayerLayout: ViewModifier {
     @Environment(AppModel.self) private var model
     @Binding var showingPlayer: Bool
 
@@ -96,8 +99,9 @@ private struct LegacyMiniPlayerInset: ViewModifier {
         if #available(iOS 26.0, *) {
             content
         } else {
-            // Tab content's safe area ends above the tab bar; TabView's does not.
-            content.safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if model.playback.currentTrack != nil {
                     MiniPlayerView(showingPlayer: $showingPlayer, presentation: .legacy)
                         .padding(.horizontal, 10)
